@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { getUserProfile } from "@/lib/supabase";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,20 +25,46 @@ import {
 
 export function UserMenu() {
   const { user, signOut } = useAuth();
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  const [profileDisplayName, setProfileDisplayName] = useState<string | null>(null);
+
+  // 載入用戶自訂資料
+  useEffect(() => {
+    async function loadProfile() {
+      if (!user) return;
+      try {
+        const profile = await getUserProfile(user.id);
+        if (profile) {
+          // 使用 "in" 檢查屬性是否存在，而不是檢查 truthy
+          // 這樣可以正確處理用戶清除欄位（設為空字串或 null）的情況
+          if ("avatar_url" in profile) {
+            setProfileAvatarUrl(profile.avatar_url || null);
+          }
+          if ("display_name" in profile) {
+            setProfileDisplayName(profile.display_name || null);
+          }
+        }
+      } catch (err) {
+        // 忽略錯誤，使用預設值
+      }
+    }
+    loadProfile();
+  }, [user]);
 
   const handleSignOut = async () => {
     await signOut();
   };
 
-  // 取得用戶顯示名稱
+  // 取得用戶顯示名稱（優先使用自訂名稱）
   const displayName =
+    profileDisplayName ||
     user?.user_metadata?.full_name ||
     user?.user_metadata?.name ||
     user?.email?.split("@")[0] ||
     "用戶";
 
-  // 取得用戶頭像
-  const avatarUrl = user?.user_metadata?.avatar_url;
+  // 取得用戶頭像（優先使用自訂頭像）
+  const avatarUrl = profileAvatarUrl || user?.user_metadata?.avatar_url;
 
   return (
     <DropdownMenu>

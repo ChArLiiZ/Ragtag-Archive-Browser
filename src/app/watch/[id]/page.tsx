@@ -58,6 +58,7 @@ export default function WatchPage() {
   const videoId = params.id as string;
   const playlistId = searchParams.get("playlist");
   const shuffleMode = searchParams.get("shuffle") === "true";
+  const restartMode = searchParams.get("restart") === "true";
   const { user } = useAuth();
 
   const [video, setVideo] = useState<VideoMetadata | null>(null);
@@ -108,9 +109,14 @@ export default function WatchPage() {
         setIsFavorite(favorited);
 
         // 載入觀看進度
-        const progress = await getWatchProgress(user.id, videoId);
-        if (progress?.progress_seconds) {
-          setInitialProgress(progress.progress_seconds);
+        // 如果有 restart=true，則忽略之前的進度（從 0 開始）
+        if (restartMode) {
+          setInitialProgress(0);
+        } else {
+          const progress = await getWatchProgress(user.id, videoId);
+          if (progress?.progress_seconds) {
+            setInitialProgress(progress.progress_seconds);
+          }
         }
       } catch (err) {
         console.error("Failed to load user data:", err);
@@ -118,7 +124,7 @@ export default function WatchPage() {
     }
 
     loadUserData();
-  }, [user, videoId]);
+  }, [user, videoId, restartMode]);
 
   // 載入播放清單資料
   useEffect(() => {
@@ -152,6 +158,19 @@ export default function WatchPage() {
     fetchPlaylist();
   }, [playlistId, videoId]);
 
+  // 切換隨機模式
+  const toggleShuffle = useCallback(() => {
+    const newShuffleMode = !shuffleMode;
+    const params = new URLSearchParams(searchParams.toString());
+    if (newShuffleMode) {
+      params.set("shuffle", "true");
+    } else {
+      params.delete("shuffle");
+    }
+    const queryString = params.toString();
+    router.push(`/watch/${videoId}${queryString ? `?${queryString}` : ""}`);
+  }, [searchParams, router, videoId, shuffleMode]);
+
   // 播放下一部
   const playNextVideo = useCallback(() => {
     if (playlistItems.length === 0) return;
@@ -174,9 +193,10 @@ export default function WatchPage() {
 
     const nextItem = playlistItems[nextIndex];
     if (nextItem) {
-      router.push(`/watch/${nextItem.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}`);
+      const restartParam = restartMode ? "&restart=true" : "";
+      router.push(`/watch/${nextItem.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}${restartParam}`);
     }
-  }, [playlistItems, currentIndex, shuffleMode, playlistId, router]);
+  }, [playlistItems, currentIndex, shuffleMode, playlistId, router, restartMode]);
 
   // 播放上一部
   const playPrevVideo = useCallback(() => {
@@ -184,9 +204,10 @@ export default function WatchPage() {
 
     const prevItem = playlistItems[currentIndex - 1];
     if (prevItem) {
-      router.push(`/watch/${prevItem.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}`);
+      const restartParam = restartMode ? "&restart=true" : "";
+      router.push(`/watch/${prevItem.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}${restartParam}`);
     }
-  }, [playlistItems, currentIndex, shuffleMode, playlistId, router]);
+  }, [playlistItems, currentIndex, shuffleMode, playlistId, router, restartMode]);
 
   // 切換收藏
   const toggleFavorite = async () => {
@@ -335,12 +356,19 @@ export default function WatchPage() {
                         {currentIndex + 1} / {playlistItems.length} 部影片
                       </p>
                     </div>
-                    {shuffleMode && (
-                      <span className="flex items-center gap-1 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded shrink-0">
-                        <Shuffle className="w-3 h-3" />
-                        隨機
-                      </span>
-                    )}
+                    {/* 隨機播放控制 */}
+                    <Button
+                      variant={shuffleMode ? "secondary" : "ghost"}
+                      size="icon"
+                      className={`h-7 w-7 ${shuffleMode ? "text-primary bg-primary/20" : "text-muted-foreground"}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleShuffle();
+                      }}
+                      title={shuffleMode ? "關閉隨機播放" : "開啟隨機播放"}
+                    >
+                      <Shuffle className="w-3 h-3" />
+                    </Button>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Button
@@ -383,10 +411,11 @@ export default function WatchPage() {
                   <div className="border-t max-h-80 overflow-y-auto">
                     {playlistItems.map((item, index) => {
                       const isCurrentVideo = item.video_id === videoId;
+                      const restartParam = restartMode ? "&restart=true" : "";
                       return (
                         <Link
                           key={item.id}
-                          href={`/watch/${item.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}`}
+                          href={`/watch/${item.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}${restartParam}`}
                           className={`flex gap-3 p-3 hover:bg-accent/50 transition-colors ${isCurrentVideo ? "bg-primary/10 border-l-2 border-primary" : ""
                             }`}
                         >

@@ -2,12 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { VideoGrid } from "@/components/video/VideoGrid";
+import { SearchFilters } from "@/components/search/SearchFilters";
 import { searchVideos } from "@/lib/api";
-import type { VideoMetadata, SortField, SortOrder } from "@/lib/types";
+import type { VideoMetadata, SortField, SortOrder, SearchFilters as SearchFiltersType } from "@/lib/types";
 import {
   Select,
   SelectContent,
@@ -30,6 +31,117 @@ const SORT_OPTIONS: { value: SortField; label: string }[] = [
 ];
 
 const PAGE_SIZE = 20;
+// 為了在客戶端進行篩選，我們需要取得更多結果
+const FETCH_SIZE_WITH_FILTERS = 200;
+
+/**
+ * 從 URL 參數解析篩選條件
+ */
+function parseFiltersFromParams(params: URLSearchParams): SearchFiltersType {
+  const filters: SearchFiltersType = {};
+
+  // 日期範圍
+  const dateFrom = params.get("date_from");
+  const dateTo = params.get("date_to");
+  const dateField = params.get("date_field") as "upload_date" | "archived_timestamp" | null;
+  if (dateFrom || dateTo) {
+    filters.dateRange = {
+      field: dateField || "upload_date",
+      from: dateFrom || undefined,
+      to: dateTo || undefined,
+    };
+  }
+
+  // 影片長度
+  const durationMin = params.get("duration_min");
+  const durationMax = params.get("duration_max");
+  if (durationMin || durationMax) {
+    filters.duration = {
+      min: durationMin ? parseInt(durationMin, 10) : undefined,
+      max: durationMax ? parseInt(durationMax, 10) : undefined,
+    };
+  }
+
+  // 觀看次數
+  const viewMin = params.get("view_min");
+  const viewMax = params.get("view_max");
+  if (viewMin || viewMax) {
+    filters.viewCount = {
+      min: viewMin ? parseInt(viewMin, 10) : undefined,
+      max: viewMax ? parseInt(viewMax, 10) : undefined,
+    };
+  }
+
+  return filters;
+}
+
+/**
+ * 將篩選條件轉為 URL 參數
+ */
+function filtersToParams(filters: SearchFiltersType): Record<string, string> {
+  const params: Record<string, string> = {};
+
+  if (filters.dateRange) {
+    if (filters.dateRange.from) params.date_from = filters.dateRange.from;
+    if (filters.dateRange.to) params.date_to = filters.dateRange.to;
+    if (filters.dateRange.field) params.date_field = filters.dateRange.field;
+  }
+
+  if (filters.duration) {
+    if (filters.duration.min !== undefined) params.duration_min = String(filters.duration.min);
+    if (filters.duration.max !== undefined) params.duration_max = String(filters.duration.max);
+  }
+
+  if (filters.viewCount) {
+    if (filters.viewCount.min !== undefined) params.view_min = String(filters.viewCount.min);
+    if (filters.viewCount.max !== undefined) params.view_max = String(filters.viewCount.max);
+  }
+
+  return params;
+}
+
+/**
+ * 檢查影片是否符合篩選條件
+ */
+function matchesFilters(video: VideoMetadata, filters: SearchFiltersType): boolean {
+  // 日期篩選
+  if (filters.dateRange) {
+    const dateField = filters.dateRange.field || "upload_date";
+    const videoDate = dateField === "upload_date"
+      ? video.upload_date
+      : video.archived_timestamp?.slice(0, 10).replace(/-/g, "");
+
+    if (videoDate) {
+      if (filters.dateRange.from && videoDate < filters.dateRange.from) return false;
+      if (filters.dateRange.to && videoDate > filters.dateRange.to) return false;
+    }
+  }
+
+  // 長度篩選
+  if (filters.duration) {
+    if (filters.duration.min !== undefined && video.duration < filters.duration.min) return false;
+    if (filters.duration.max !== undefined && video.duration > filters.duration.max) return false;
+  }
+
+  // 觀看次數篩選
+  if (filters.viewCount) {
+    if (filters.viewCount.min !== undefined && video.view_count < filters.viewCount.min) return false;
+    if (filters.viewCount.max !== undefined && video.view_count > filters.viewCount.max) return false;
+  }
+
+  return true;
+}
+
+/**
+ * 檢查是否有任何篩選條件
+ */
+function hasActiveFilters(filters: SearchFiltersType): boolean {
+  return !!(
+    (filters.dateRange && (filters.dateRange.from || filters.dateRange.to)) ||
+    (filters.duration && (filters.duration.min !== undefined || filters.duration.max !== undefined)) ||
+    (filters.viewCount && (filters.viewCount.min !== undefined || filters.viewCount.max !== undefined))
+  );
+}
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -43,7 +155,11 @@ function SearchContent() {
   const sortOrder = (searchParams.get("sort_order") as SortOrder) || "desc";
   const page = parseInt(searchParams.get("page") || "1", 10);
 
-  const [videos, setVideos] = useState<VideoMetadata[]>([]);
+  // 從 URL 解析篩選條件
+  const filters = useMemo(() => parseFiltersFromParams(searchParams), [searchParams]);
+  const hasFilters = hasActiveFilters(filters);
+
+  const [allVideos, setAllVideos] = useState<VideoMetadata[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,23 +170,45 @@ function SearchContent() {
       setLoading(true);
       setError(null);
 
+      // 如果有篩選條件，取得更多結果以便在客戶端篩選
+      const fetchSize = hasFilters ? FETCH_SIZE_WITH_FILTERS : PAGE_SIZE;
+      const fetchFrom = hasFilters ? 0 : (page - 1) * PAGE_SIZE;
+
       const response = await searchVideos({
         query: query || undefined,
         sort,
         sortOrder,
-        from: (page - 1) * PAGE_SIZE,
-        size: PAGE_SIZE,
+        from: fetchFrom,
+        size: fetchSize,
       });
 
-      setVideos(response.hits.hits.map((hit) => hit._source));
-      setTotalCount(response.hits.total.value);
+      const fetchedVideos = response.hits.hits.map((hit) => hit._source);
+
+      if (hasFilters) {
+        // 在客戶端進行篩選
+        const filteredVideos = fetchedVideos.filter((video) => matchesFilters(video, filters));
+        setAllVideos(filteredVideos);
+        setTotalCount(filteredVideos.length);
+      } else {
+        setAllVideos(fetchedVideos);
+        setTotalCount(response.hits.total.value);
+      }
     } catch (err) {
       console.error("Search failed:", err);
       setError("搜尋失敗，請稍後再試");
     } finally {
       setLoading(false);
     }
-  }, [query, sort, sortOrder, page]);
+  }, [query, sort, sortOrder, page, filters, hasFilters]);
+
+  // 分頁處理（客戶端篩選時）
+  const videos = useMemo(() => {
+    if (hasFilters) {
+      const start = (page - 1) * PAGE_SIZE;
+      return allVideos.slice(start, start + PAGE_SIZE);
+    }
+    return allVideos;
+  }, [allVideos, page, hasFilters]);
 
   useEffect(() => {
     fetchResults();
@@ -81,7 +219,7 @@ function SearchContent() {
     setPageInputValue(String(page));
   }, [page]);
 
-  const updateParams = (updates: Record<string, string>) => {
+  const updateParams = (updates: Record<string, string>, resetPage = false) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
       if (value) {
@@ -90,10 +228,35 @@ function SearchContent() {
         params.delete(key);
       }
     });
-    // 更改排序時重置到第一頁
-    if (updates.sort || updates.sort_order) {
+    // 更改排序或篩選時重置到第一頁
+    if (updates.sort || updates.sort_order || resetPage) {
       params.set("page", "1");
     }
+    router.push(`/search?${params.toString()}`);
+  };
+
+  // 處理篩選變更
+  const handleFiltersChange = (newFilters: SearchFiltersType) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    // 先清除所有篩選相關參數
+    params.delete("date_from");
+    params.delete("date_to");
+    params.delete("date_field");
+    params.delete("duration_min");
+    params.delete("duration_max");
+    params.delete("view_min");
+    params.delete("view_max");
+
+    // 設定新的篩選參數
+    const filterParams = filtersToParams(newFilters);
+    Object.entries(filterParams).forEach(([key, value]) => {
+      params.set(key, value);
+    });
+
+    // 重置到第一頁
+    params.set("page", "1");
+
     router.push(`/search?${params.toString()}`);
   };
 
@@ -151,6 +314,18 @@ function SearchContent() {
             </Button>
           </div>
         </div>
+
+        {/* 篩選選項 */}
+        <div className="mt-4">
+          <SearchFilters filters={filters} onFiltersChange={handleFiltersChange} />
+        </div>
+
+        {/* 篩選提示 */}
+        {hasFilters && !loading && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            已套用篩選，顯示前 {FETCH_SIZE_WITH_FILTERS} 個結果中符合條件的影片
+          </p>
+        )}
       </motion.div>
 
       {/* 結果 */}

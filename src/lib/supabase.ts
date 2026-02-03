@@ -355,6 +355,57 @@ export async function removeFromPlaylist(playlistId: string, videoId: string) {
   if (error) throw error;
 }
 
+/**
+ * 更新播放清單項目順序
+ * @param playlistId 播放清單 ID
+ * @param itemIds 按新順序排列的項目 ID 陣列
+ * @returns 失敗的項目 ID 陣列（空陣列表示全部成功）
+ */
+export async function reorderPlaylistItems(
+  playlistId: string,
+  itemIds: string[]
+): Promise<{ failedIds: string[] }> {
+  // 批次更新每個項目的 position
+  const updates = itemIds.map((id, index) => ({
+    id,
+    position: index,
+  }));
+
+  // 使用 Promise.allSettled 確保所有更新都嘗試執行
+  const results = await Promise.allSettled(
+    updates.map(({ id, position }) =>
+      supabase
+        .from("playlist_items")
+        .update({ position })
+        .eq("id", id)
+        .eq("playlist_id", playlistId)
+        .then((result) => {
+          if (result.error) throw { id, error: result.error };
+          return { id, success: true };
+        })
+    )
+  );
+
+  // 收集失敗的項目
+  const failedIds: string[] = [];
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      failedIds.push(updates[index].id);
+      console.error(`Failed to update item ${updates[index].id}:`, result.reason);
+    }
+  });
+
+  // 只有在至少有一個成功時才更新 updated_at
+  if (failedIds.length < itemIds.length) {
+    await supabase
+      .from("playlists")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", playlistId);
+  }
+
+  return { failedIds };
+}
+
 // ---------- 觀看紀錄相關 ----------
 
 /**

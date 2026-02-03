@@ -46,6 +46,17 @@ export interface VideoMetadata {
 }
 
 /**
+ * 頻道資訊（聚合結果）
+ */
+export interface ChannelInfo {
+  channel_id: string;
+  channel_name: string;
+  video_count: number;
+  latest_video_date?: string;
+  total_views?: number;
+}
+
+/**
  * 搜尋結果項目
  */
 export interface SearchHit {
@@ -71,6 +82,28 @@ export interface SearchResponse {
 }
 
 /**
+ * 搜尋篩選條件
+ */
+export interface SearchFilters {
+  /** 日期範圍篩選 */
+  dateRange?: {
+    field: "upload_date" | "archived_timestamp";
+    from?: string; // YYYYMMDD 格式
+    to?: string;
+  };
+  /** 影片長度篩選（秒） */
+  duration?: {
+    min?: number;
+    max?: number;
+  };
+  /** 觀看次數篩選 */
+  viewCount?: {
+    min?: number;
+    max?: number;
+  };
+}
+
+/**
  * 搜尋選項
  */
 export interface SearchOptions {
@@ -81,6 +114,7 @@ export interface SearchOptions {
   sortOrder?: SortOrder;
   from?: number;
   size?: number;
+  filters?: SearchFilters;
 }
 
 /**

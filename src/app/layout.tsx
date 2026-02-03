@@ -3,6 +3,7 @@ import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import QueryProvider from "@/components/providers/QueryProvider";
 
 export const metadata: Metadata = {
   title: "Ragtag Archive Browser - 影片存檔瀏覽器",
@@ -19,10 +20,12 @@ export default function RootLayout({
     <html lang="zh-TW" suppressHydrationWarning>
       <body className="gradient-bg min-h-screen custom-scrollbar">
         <ThemeProvider>
-          <AuthProvider>
-            <Header />
-            <main className="pt-16">{children}</main>
-          </AuthProvider>
+          <QueryProvider>
+            <AuthProvider>
+              <Header />
+              <main className="pt-16">{children}</main>
+            </AuthProvider>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

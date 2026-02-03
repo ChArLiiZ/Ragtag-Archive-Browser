@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useSearchHistory } from "@/hooks/useSearchHistory";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { SearchSuggestions } from "@/components/search/SearchSuggestions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sun, Moon, Search, Menu, X, PlayCircle } from "lucide-react";
@@ -16,15 +18,28 @@ export function Header() {
   const router = useRouter();
   const { user, isConfigured } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { history, addToHistory, removeFromHistory, clearHistory } = useSearchHistory();
   const [searchQuery, setSearchQuery] = useState("");
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const mobileSearchContainerRef = useRef<HTMLDivElement>(null);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      addToHistory(searchQuery.trim());
+      setShowSuggestions(false);
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
     }
+  };
+
+  const handleSelectSuggestion = (query: string) => {
+    setSearchQuery(query);
+    addToHistory(query);
+    setShowSuggestions(false);
+    router.push(`/search?q=${encodeURIComponent(query)}`);
   };
 
   return (
@@ -43,14 +58,24 @@ export function Header() {
 
           {/* 搜尋列 */}
           <form onSubmit={handleSearch} className="flex-1 max-w-xl hidden sm:block">
-            <div className="relative">
+            <div className="relative" ref={searchContainerRef}>
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setShowSuggestions(true)}
                 placeholder="搜尋影片..."
                 className="pl-10"
+              />
+              <SearchSuggestions
+                isOpen={showSuggestions}
+                history={history}
+                currentQuery={searchQuery}
+                onSelect={handleSelectSuggestion}
+                onRemoveHistory={removeFromHistory}
+                onClearHistory={clearHistory}
+                onClose={() => setShowSuggestions(false)}
               />
             </div>
           </form>
@@ -111,14 +136,24 @@ export function Header() {
               <div className="container-custom py-4 space-y-4">
                 {/* 手機版搜尋 */}
                 <form onSubmit={handleSearch}>
-                  <div className="relative">
+                  <div className="relative" ref={mobileSearchContainerRef}>
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() => setShowSuggestions(true)}
                       placeholder="搜尋影片..."
                       className="pl-10"
+                    />
+                    <SearchSuggestions
+                      isOpen={showSuggestions && mobileMenuOpen}
+                      history={history}
+                      currentQuery={searchQuery}
+                      onSelect={handleSelectSuggestion}
+                      onRemoveHistory={removeFromHistory}
+                      onClearHistory={clearHistory}
+                      onClose={() => setShowSuggestions(false)}
                     />
                   </div>
                 </form>

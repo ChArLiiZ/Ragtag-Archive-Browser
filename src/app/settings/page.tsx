@@ -2,15 +2,16 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { updateUserProfile } from "@/lib/supabase";
+import { updateUserProfile, getUserProfile } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AvatarUpload } from "@/components/settings/AvatarUpload";
 import { Settings, Moon, Sun } from "lucide-react";
 
 export default function SettingsPage() {
@@ -19,18 +20,52 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState(
     user?.user_metadata?.full_name || ""
   );
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    user?.user_metadata?.avatar_url || null
+  );
   const [saving, setSaving] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  // 載入用戶資料
+  useEffect(() => {
+    async function loadProfile() {
+      if (!user) return;
+      try {
+        setLoadingProfile(true);
+        const profile = await getUserProfile(user.id);
+        if (profile) {
+          // 使用 "in" 檢查屬性是否存在，而不是檢查 truthy
+          // 這樣可以正確處理用戶清除欄位（設為空字串或 null）的情況
+          if ("display_name" in profile) {
+            setDisplayName(profile.display_name || "");
+          }
+          if ("avatar_url" in profile) {
+            setAvatarUrl(profile.avatar_url || null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load profile:", err);
+      } finally {
+        setLoadingProfile(false);
+      }
+    }
+    loadProfile();
+  }, [user]);
 
   const handleSaveProfile = async () => {
     if (!user) return;
 
     try {
       setSaving(true);
-      await updateUserProfile(user.id, { display_name: displayName });
+      await updateUserProfile(user.id, {
+        display_name: displayName,
+        // Explicitly handle null -> undefined conversion for TypeScript
+        avatar_url: avatarUrl ?? undefined,
+      });
       setMessage({ type: "success", text: "設定已儲存" });
     } catch (err) {
       console.error("Failed to save profile:", err);
@@ -39,6 +74,11 @@ export default function SettingsPage() {
       setSaving(false);
       setTimeout(() => setMessage(null), 3000);
     }
+  };
+
+  // 處理頭像變更
+  const handleAvatarChange = (url: string | null) => {
+    setAvatarUrl(url);
   };
 
   // 未登入狀態
@@ -115,8 +155,16 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>個人資料</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
+            <CardContent className="space-y-6">
+              {/* 頭像設定 */}
+              <AvatarUpload
+                currentAvatarUrl={avatarUrl}
+                displayName={displayName || user.email?.split("@")[0] || "用戶"}
+                onAvatarChange={handleAvatarChange}
+                disabled={saving || loadingProfile}
+              />
+
+              <div className="border-t pt-6">
                 <label className="block text-sm text-muted-foreground mb-2">
                   電子信箱
                 </label>
@@ -137,10 +185,11 @@ export default function SettingsPage() {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="輸入顯示名稱"
+                  disabled={loadingProfile}
                 />
               </div>
 
-              <Button onClick={handleSaveProfile} disabled={saving}>
+              <Button onClick={handleSaveProfile} disabled={saving || loadingProfile}>
                 {saving ? "儲存中..." : "儲存變更"}
               </Button>
             </CardContent>

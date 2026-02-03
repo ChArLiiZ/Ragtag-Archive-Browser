@@ -67,14 +67,6 @@ export function useUserLibrary(): UserLibraryStatus {
 
     useEffect(() => {
         loadLibrary();
-
-        // 監聽視窗聚焦，重新驗證資料
-        const handleFocus = () => loadLibrary();
-        window.addEventListener("focus", handleFocus);
-
-        return () => {
-            window.removeEventListener("focus", handleFocus);
-        };
     }, [loadLibrary]);
 
     return {

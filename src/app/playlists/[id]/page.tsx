@@ -6,6 +6,21 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from "@dnd-kit/core";
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWatchProgressBatch } from "@/hooks/useWatchProgressBatch";
 import {
@@ -13,9 +28,11 @@ import {
     removeFromPlaylist,
     updatePlaylist,
     deletePlaylist,
+    reorderPlaylistItems,
 } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 import type { Playlist, PlaylistItem } from "@/lib/types";
+import { SortablePlaylistItem } from "@/components/playlist/SortablePlaylistItem";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,7 +44,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { ListVideo, Play, Shuffle, Pencil, Trash2, X, ArrowUpDown } from "lucide-react";
+import { ListVideo, Play, Shuffle, Pencil, Trash2, X, ArrowUpDown, GripVertical } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 type SortOption = "position" | "title" | "channel" | "added_at";
 type SortOrder = "asc" | "desc";
@@ -42,6 +61,9 @@ export default function PlaylistDetailPage() {
     const [items, setItems] = useState<PlaylistItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // 播放選項
+    const [startFromBeginning, setStartFromBeginning] = useState(false);
 
     // 排序
     const [sortBy, setSortBy] = useState<SortOption>("position");
@@ -167,14 +189,71 @@ export default function PlaylistDetailPage() {
         if (items.length === 0) return;
         const randomIndex = Math.floor(Math.random() * items.length);
         const randomItem = items[randomIndex];
-        router.push(`/watch/${randomItem.video_id}?playlist=${playlistId}&shuffle=true`);
-    }, [items, playlistId, router]);
+        const restartParam = startFromBeginning ? "&restart=true" : "";
+        router.push(`/watch/${randomItem.video_id}?playlist=${playlistId}&shuffle=true${restartParam}`);
+    }, [items, playlistId, router, startFromBeginning]);
 
     // 順序播放
     const handlePlayAll = useCallback(() => {
         if (sortedItems.length === 0) return;
-        router.push(`/watch/${sortedItems[0].video_id}?playlist=${playlistId}`);
-    }, [sortedItems, playlistId, router]);
+        const restartParam = startFromBeginning ? "&restart=true" : "";
+        router.push(`/watch/${sortedItems[0].video_id}?playlist=${playlistId}${restartParam}`);
+    }, [sortedItems, playlistId, router, startFromBeginning]);
+
+    // 拖曳排序結束
+    // 注意：使用 sortedItems 來找索引，因為那是用戶實際看到並拖曳的順序
+    const handleDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (!over || active.id === over.id) {
+            return;
+        }
+
+        // 從 sortedItems 找索引，因為用戶拖曳的是排序後顯示的列表
+        const oldIndex = sortedItems.findIndex((item) => item.id === active.id);
+        const newIndex = sortedItems.findIndex((item) => item.id === over.id);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+            // 在 sortedItems 上執行移動
+            const reorderedSortedItems = arrayMove(sortedItems, oldIndex, newIndex);
+
+            // 更新每個項目的 position 以符合新的顯示順序
+            const newItems = reorderedSortedItems.map((item, index) => ({
+                ...item,
+                position: index,
+            }));
+
+            setItems(newItems);
+
+            // 更新資料庫
+            try {
+                const { failedIds } = await reorderPlaylistItems(
+                    playlistId,
+                    newItems.map((item) => item.id)
+                );
+
+                if (failedIds.length > 0) {
+                    console.error("Failed to reorder some items:", failedIds);
+                    // 有部分失敗，重新載入整個清單以確保一致性
+                    const freshItems = await getPlaylistItems(playlistId);
+                    setItems(freshItems || []);
+                }
+            } catch (err) {
+                console.error("Failed to reorder playlist:", err);
+                // 完全失敗時重新載入清單
+                const freshItems = await getPlaylistItems(playlistId);
+                setItems(freshItems || []);
+            }
+        }
+    };
+
+    // Dnd 感測器
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
 
     // 未登入狀態
     if (!authLoading && !user) {
@@ -291,15 +370,31 @@ export default function PlaylistDetailPage() {
 
                             {/* 播放按鈕 */}
                             {items.length > 0 && (
-                                <div className="flex gap-3 mt-4">
-                                    <Button onClick={handlePlayAll}>
-                                        <Play className="w-4 h-4 mr-2" />
-                                        播放全部
-                                    </Button>
-                                    <Button variant="outline" onClick={handleShufflePlay}>
-                                        <Shuffle className="w-4 h-4 mr-2" />
-                                        隨機播放
-                                    </Button>
+                                <div className="flex flex-col sm:flex-row gap-4 mt-4 items-start sm:items-center">
+                                    <div className="flex gap-3">
+                                        <Button onClick={handlePlayAll}>
+                                            <Play className="w-4 h-4 mr-2" />
+                                            播放全部
+                                        </Button>
+                                        <Button variant="outline" onClick={handleShufflePlay}>
+                                            <Shuffle className="w-4 h-4 mr-2" />
+                                            隨機播放
+                                        </Button>
+                                    </div>
+
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="startFromBeginning"
+                                            checked={startFromBeginning}
+                                            onCheckedChange={setStartFromBeginning}
+                                        />
+                                        <Label
+                                            htmlFor="startFromBeginning"
+                                            className="cursor-pointer"
+                                        >
+                                            從頭開始播放
+                                        </Label>
+                                    </div>
                                 </div>
                             )}
                         </>
@@ -344,77 +439,41 @@ export default function PlaylistDetailPage() {
                     </Card>
                 ) : (
                     <div className="space-y-2">
-                        {sortedItems.map((item, index) => (
-                            <motion.div
-                                key={item.id}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: index * 0.03 }}
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                        >
+                            <SortableContext
+                                items={sortedItems.map((item) => item.id)}
+                                strategy={verticalListSortingStrategy}
                             >
-                                <Card className="p-3 flex gap-4 group hover:bg-accent/50 transition-colors">
-                                    {/* 序號 */}
-                                    <div className="w-8 flex items-center justify-center text-muted-foreground shrink-0">
-                                        {index + 1}
-                                    </div>
+                                {sortedItems.map((item, index) => {
+                                    const progress = progressMap.get(item.video_id);
+                                    const percent = progress && progress.duration > 0
+                                        ? (progress.progress / progress.duration) * 100
+                                        : 0;
 
-                                    {/* 縮圖 */}
-                                    <Link
-                                        href={`/watch/${item.video_id}?playlist=${playlistId}`}
-                                        className="relative w-40 h-24 shrink-0 overflow-hidden rounded-lg bg-muted"
-                                    >
-                                        {item.thumbnail_url && (
-                                            <img
-                                                src={item.thumbnail_url}
-                                                alt={item.video_title || ""}
-                                                className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                                                loading="lazy"
+                                    return (
+                                        <motion.div
+                                            key={item.id}
+                                            initial={{ opacity: 0, x: -20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: index * 0.03 }}
+                                        >
+                                            <SortablePlaylistItem
+                                                item={item}
+                                                playlistId={playlistId}
+                                                index={index}
+                                                progressPercent={percent}
+                                                onRemove={handleRemoveItem}
+                                                isDragDisabled={sortBy !== "position"}
                                             />
-                                        )}
-                                        {/* 觀看進度條 */}
-                                        {(() => {
-                                            const progress = progressMap.get(item.video_id);
-                                            const percent = progress && progress.duration > 0
-                                                ? (progress.progress / progress.duration) * 100
-                                                : 0;
-                                            return percent > 0 ? (
-                                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
-                                                    <div
-                                                        className="h-full bg-red-600"
-                                                        style={{ width: `${Math.min(percent, 100)}%` }}
-                                                    />
-                                                </div>
-                                            ) : null;
-                                        })()}
-                                    </Link>
-
-                                    {/* 資訊 */}
-                                    <div className="flex-1 min-w-0">
-                                        <Link
-                                            href={`/watch/${item.video_id}?playlist=${playlistId}`}
-                                            className="block group-hover:text-primary transition-colors"
-                                        >
-                                            <h3 className="font-medium line-clamp-2 mb-1">
-                                                {item.video_title || "未知標題"}
-                                            </h3>
-                                        </Link>
-                                        <p className="text-sm text-muted-foreground">{item.channel_name || "未知頻道"}</p>
-                                    </div>
-
-                                    {/* 操作按鈕 */}
-                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => handleRemoveItem(item.video_id)}
-                                            className="h-8 w-8 text-destructive hover:text-destructive"
-                                            title="移除"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </Button>
-                                    </div>
-                                </Card>
-                            </motion.div>
-                        ))}
+                                        </motion.div>
+                                    );
+                                })}
+                            </SortableContext>
+                        </DndContext>
                     </div>
                 )}
             </motion.div>
