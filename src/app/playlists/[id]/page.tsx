@@ -2,11 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWatchProgressBatch } from "@/hooks/useWatchProgressBatch";
 import {
     getPlaylistItems,
     removeFromPlaylist,
@@ -105,6 +106,18 @@ export default function PlaylistDetailPage() {
                 break;
         }
         return sortOrder === "asc" ? comparison : -comparison;
+    });
+
+    // 取得所有影片 ID
+    const videoIds = useMemo(
+        () => items.map((item) => item.video_id),
+        [items]
+    );
+
+    // 批次載入觀看進度
+    const { progressMap } = useWatchProgressBatch({
+        videoIds,
+        enabled: !!user,
     });
 
     // 移除項目
@@ -357,6 +370,21 @@ export default function PlaylistDetailPage() {
                                                 loading="lazy"
                                             />
                                         )}
+                                        {/* 觀看進度條 */}
+                                        {(() => {
+                                            const progress = progressMap.get(item.video_id);
+                                            const percent = progress && progress.duration > 0
+                                                ? (progress.progress / progress.duration) * 100
+                                                : 0;
+                                            return percent > 0 ? (
+                                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                                                    <div
+                                                        className="h-full bg-red-600"
+                                                        style={{ width: `${Math.min(percent, 100)}%` }}
+                                                    />
+                                                </div>
+                                            ) : null;
+                                        })()}
                                     </Link>
 
                                     {/* 資訊 */}

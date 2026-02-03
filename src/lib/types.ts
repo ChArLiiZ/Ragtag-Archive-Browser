@@ -161,6 +161,9 @@ export interface WatchHistory {
   id: string;
   user_id: string;
   video_id: string;
+  video_title: string | null;
+  channel_name: string | null;
+  thumbnail_url: string | null;
   progress_seconds: number;
   duration_seconds: number | null;
   last_watched_at: string;

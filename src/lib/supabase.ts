@@ -16,23 +16,23 @@ export const isSupabaseConfigured =
 export const supabase: SupabaseClient = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : ({
-      auth: {
-        getSession: async () => ({ data: { session: null }, error: null }),
-        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-        signInWithPassword: async () => ({ error: new Error("Supabase not configured") }),
-        signUp: async () => ({ error: new Error("Supabase not configured") }),
-        signOut: async () => {},
-        signInWithOAuth: async () => ({ error: new Error("Supabase not configured") }),
-        exchangeCodeForSession: async () => ({ error: new Error("Supabase not configured") }),
-      },
-      from: () => ({
-        select: () => ({ data: null, error: new Error("Supabase not configured") }),
-        insert: () => ({ data: null, error: new Error("Supabase not configured") }),
-        update: () => ({ data: null, error: new Error("Supabase not configured") }),
-        delete: () => ({ data: null, error: new Error("Supabase not configured") }),
-        upsert: () => ({ data: null, error: new Error("Supabase not configured") }),
-      }),
-    } as unknown as SupabaseClient);
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => { } } } }),
+      signInWithPassword: async () => ({ error: new Error("Supabase not configured") }),
+      signUp: async () => ({ error: new Error("Supabase not configured") }),
+      signOut: async () => { },
+      signInWithOAuth: async () => ({ error: new Error("Supabase not configured") }),
+      exchangeCodeForSession: async () => ({ error: new Error("Supabase not configured") }),
+    },
+    from: () => ({
+      select: () => ({ data: null, error: new Error("Supabase not configured") }),
+      insert: () => ({ data: null, error: new Error("Supabase not configured") }),
+      update: () => ({ data: null, error: new Error("Supabase not configured") }),
+      delete: () => ({ data: null, error: new Error("Supabase not configured") }),
+      upsert: () => ({ data: null, error: new Error("Supabase not configured") }),
+    }),
+  } as unknown as SupabaseClient);
 
 // ============================================
 // 資料庫操作函數
@@ -106,6 +106,47 @@ export async function isFavorited(userId: string, videoId: string) {
 
   if (error && error.code !== "PGRST116") throw error;
   return !!data;
+}
+
+/**
+ * 取得用戶所有相關的影片 ID (收藏和播放清單)
+ * 用於在列表中顯示影片狀態
+ */
+export async function getUserLibraryVideoIds(userId: string) {
+  // 平行取得收藏和播放清單項目
+  const [favoritesResult, playlistItemsResult] = await Promise.all([
+    supabase.from("favorites").select("video_id").eq("user_id", userId),
+    // 取得該用戶所有播放清單中的影片項目
+    // 注意：這需要透過關聯查詢，或者先取得播放清單 ID 再查項目
+    // 為了效能，這裡我們使用一個稍微複雜的查詢，或者假設 RLS 允許我們直接查 playlist_items
+    // 根據 RLS 策略 "Users can manage own playlist items"，我們可以直接查
+    // 但需要確保是我們自己的播放清單。這裡用簡單的方式：先查播放清單 ID
+    (async () => {
+      const { data: playlists } = await supabase
+        .from("playlists")
+        .select("id")
+        .eq("user_id", userId);
+
+      if (!playlists || playlists.length === 0) return { data: [] };
+
+      const playlistIds = playlists.map(p => p.id);
+      return supabase
+        .from("playlist_items")
+        .select("video_id")
+        .in("playlist_id", playlistIds);
+    })()
+  ]);
+
+  if (favoritesResult.error) console.error("Error fetching favorites:", favoritesResult.error);
+  // playlistItemsResult 可能是手動執行的結果，可能沒有 error 屬性完全匹配 Supabase 回傳，但這裡簡化處理
+
+  const favoritedIds = new Set<string>((favoritesResult.data || []).map(f => f.video_id));
+  const playlistedIds = new Set<string>(((playlistItemsResult as any)?.data || []).map((i: any) => i.video_id));
+
+  return {
+    favorites: favoritedIds,
+    playlistItems: playlistedIds
+  };
 }
 
 // ---------- 播放清單相關 ----------
@@ -193,6 +234,69 @@ export async function getPlaylistItems(playlistId: string) {
 }
 
 /**
+ * 取得播放清單預覽（包含前 4 個影片的縮圖）
+ */
+export async function getPlaylistPreview(
+  playlistId: string,
+  limit: number = 4
+) {
+  const { data, error } = await supabase
+    .from("playlist_items")
+    .select("video_id, thumbnail_url")
+    .eq("playlist_id", playlistId)
+    .order("position", { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * 取得播放清單的影片數量
+ */
+export async function getPlaylistItemCount(playlistId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("playlist_items")
+    .select("*", { count: "exact", head: true })
+    .eq("playlist_id", playlistId);
+
+  if (error) throw error;
+  return count || 0;
+}
+
+/**
+ * 取得用戶播放清單（含影片數量和預覽縮圖）
+ */
+export async function getPlaylistsWithDetails(userId: string) {
+  // 先取得播放清單基本資訊
+  const { data: playlists, error } = await supabase
+    .from("playlists")
+    .select("*")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  if (!playlists) return [];
+
+  // 平行取得每個播放清單的預覽
+  const playlistsWithDetails = await Promise.all(
+    playlists.map(async (playlist) => {
+      const [preview, count] = await Promise.all([
+        getPlaylistPreview(playlist.id, 4),
+        getPlaylistItemCount(playlist.id),
+      ]);
+      return {
+        ...playlist,
+        itemCount: count,
+        thumbnails: preview?.map((item) => item.thumbnail_url).filter(Boolean) || [],
+      };
+    })
+  );
+
+  return playlistsWithDetails;
+}
+
+/**
  * 新增影片到播放清單
  */
 export async function addToPlaylist(
@@ -273,20 +377,27 @@ export async function updateWatchProgress(
   userId: string,
   videoId: string,
   progressSeconds: number,
-  durationSeconds?: number
+  durationSeconds?: number,
+  videoTitle?: string,
+  channelName?: string,
+  thumbnailUrl?: string
 ) {
+  const updateData: Record<string, unknown> = {
+    user_id: userId,
+    video_id: videoId,
+    progress_seconds: progressSeconds,
+    duration_seconds: durationSeconds,
+    last_watched_at: new Date().toISOString(),
+  };
+
+  // 只有在有值的時候才更新這些欄位
+  if (videoTitle !== undefined) updateData.video_title = videoTitle;
+  if (channelName !== undefined) updateData.channel_name = channelName;
+  if (thumbnailUrl !== undefined) updateData.thumbnail_url = thumbnailUrl;
+
   const { data, error } = await supabase
     .from("watch_history")
-    .upsert(
-      {
-        user_id: userId,
-        video_id: videoId,
-        progress_seconds: progressSeconds,
-        duration_seconds: durationSeconds,
-        last_watched_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,video_id" }
-    )
+    .upsert(updateData, { onConflict: "user_id,video_id" })
     .select()
     .single();
 
@@ -319,6 +430,38 @@ export async function clearWatchHistory(userId: string) {
     .eq("user_id", userId);
 
   if (error) throw error;
+}
+
+/**
+ * 批次取得多個影片的觀看進度
+ * @param userId 用戶 ID
+ * @param videoIds 影片 ID 陣列
+ * @returns Map<video_id, { progress: number, duration: number }>
+ */
+export async function getWatchProgressBatch(
+  userId: string,
+  videoIds: string[]
+): Promise<Map<string, { progress: number; duration: number }>> {
+  if (videoIds.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await supabase
+    .from("watch_history")
+    .select("video_id, progress_seconds, duration_seconds")
+    .eq("user_id", userId)
+    .in("video_id", videoIds);
+
+  if (error) throw error;
+
+  const progressMap = new Map<string, { progress: number; duration: number }>();
+  data?.forEach((item) => {
+    progressMap.set(item.video_id, {
+      progress: item.progress_seconds || 0,
+      duration: item.duration_seconds || 0,
+    });
+  });
+  return progressMap;
 }
 
 // ---------- 用戶資料相關 ----------

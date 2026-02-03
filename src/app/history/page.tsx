@@ -139,8 +139,8 @@ export default function HistoryPage() {
                       <div className="relative w-40 shrink-0">
                         <div className="aspect-video relative rounded-lg overflow-hidden bg-muted">
                           <img
-                            src={getThumbnailUrl(item.video_id)}
-                            alt={item.video_id}
+                            src={item.thumbnail_url || getThumbnailUrl(item.video_id)}
+                            alt={item.video_title || item.video_id}
                             className="w-full h-full object-cover"
                             loading="lazy"
                             decoding="async"
@@ -157,15 +157,20 @@ export default function HistoryPage() {
 
                       {/* 資訊 */}
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium truncate group-hover:text-primary transition-colors">
-                          {item.video_id}
+                        <h3 className="font-medium line-clamp-2 group-hover:text-primary transition-colors">
+                          {item.video_title || item.video_id}
                         </h3>
+                        {item.channel_name && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {item.channel_name}
+                          </p>
+                        )}
                         <p className="text-sm text-muted-foreground mt-1">
                           觀看進度: {formatDuration(item.progress_seconds)}
                           {item.duration_seconds &&
                             ` / ${formatDuration(item.duration_seconds)}`}
                         </p>
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           {formatRelativeTime(item.last_watched_at)}
                         </p>
                       </div>

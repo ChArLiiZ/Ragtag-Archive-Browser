@@ -28,6 +28,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { VideoMetadata, PlaylistItem, Playlist } from "@/lib/types";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
+import { RecommendedVideos } from "@/components/video/RecommendedVideos";
 import { AddToPlaylistModal } from "@/components/features/AddToPlaylistModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,7 @@ import {
   Clock,
   FileText,
   ChevronDown,
+  ChevronUp,
   Play,
   SkipBack,
   SkipForward,
@@ -71,6 +73,7 @@ export default function WatchPage() {
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
+  const [showPlaylistPanel, setShowPlaylistPanel] = useState(true);
 
   // 載入影片資料
   useEffect(() => {
@@ -214,14 +217,22 @@ export default function WatchPage() {
   // 更新觀看進度
   const handleProgressUpdate = useCallback(
     async (currentTime: number, duration: number) => {
-      if (!user) return;
+      if (!user || !video) return;
       try {
-        await updateWatchProgress(user.id, videoId, currentTime, duration);
+        await updateWatchProgress(
+          user.id,
+          videoId,
+          currentTime,
+          duration,
+          video.title,
+          video.channel_name,
+          getThumbnailUrl(videoId, video.drive_base, video.files)
+        );
       } catch (err) {
         console.error("Failed to update progress:", err);
       }
     },
-    [user, videoId]
+    [user, videoId, video]
   );
 
   if (loading) {
@@ -302,45 +313,118 @@ export default function WatchPage() {
               transition={{ delay: 0.05 }}
               className="mb-6"
             >
-              <Card className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Link
-                      href={`/playlists/${playlistId}`}
-                      className="text-sm text-primary hover:underline font-medium"
-                    >
-                      {playlist.name}
-                    </Link>
-                    <span className="text-sm text-muted-foreground">
-                      {currentIndex + 1} / {playlistItems.length}
-                    </span>
+              <Card className="overflow-hidden">
+                {/* 標題列 - 可點擊展開/收合 */}
+                <div
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-accent/30 transition-colors"
+                  onClick={() => setShowPlaylistPanel(!showPlaylistPanel)}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <ListVideo className="w-5 h-5 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <Link
+                        href={`/playlists/${playlistId}`}
+                        className="text-sm font-medium hover:text-primary transition-colors line-clamp-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {playlist.name}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                        {currentIndex + 1} / {playlistItems.length} 部影片
+                      </p>
+                    </div>
                     {shuffleMode && (
-                      <span className="flex items-center gap-1 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                      <span className="flex items-center gap-1 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded shrink-0">
                         <Shuffle className="w-3 h-3" />
-                        隨機播放
+                        隨機
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 shrink-0">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={playPrevVideo}
+                      onClick={(e) => { e.stopPropagation(); playPrevVideo(); }}
                       disabled={currentIndex <= 0 && !shuffleMode}
                       title="上一部"
+                      className="h-8 w-8"
                     >
-                      <SkipBack className="w-5 h-5" />
+                      <SkipBack className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={playNextVideo}
+                      onClick={(e) => { e.stopPropagation(); playNextVideo(); }}
                       title="下一部"
+                      className="h-8 w-8"
                     >
-                      <SkipForward className="w-5 h-5" />
+                      <SkipForward className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title={showPlaylistPanel ? "收合清單" : "展開清單"}
+                      onClick={(e) => { e.stopPropagation(); setShowPlaylistPanel(!showPlaylistPanel); }}
+                    >
+                      {showPlaylistPanel ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
+
+                {/* 可展開的影片列表 */}
+                {showPlaylistPanel && (
+                  <div className="border-t max-h-80 overflow-y-auto">
+                    {playlistItems.map((item, index) => {
+                      const isCurrentVideo = item.video_id === videoId;
+                      return (
+                        <Link
+                          key={item.id}
+                          href={`/watch/${item.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}`}
+                          className={`flex gap-3 p-3 hover:bg-accent/50 transition-colors ${isCurrentVideo ? "bg-primary/10 border-l-2 border-primary" : ""
+                            }`}
+                        >
+                          {/* 序號 */}
+                          <div className="w-6 flex items-center justify-center text-xs text-muted-foreground shrink-0">
+                            {isCurrentVideo ? (
+                              <Play className="w-3 h-3 text-primary fill-current" />
+                            ) : (
+                              index + 1
+                            )}
+                          </div>
+
+                          {/* 縮圖 */}
+                          <div className="relative w-24 shrink-0">
+                            <div className="aspect-video rounded overflow-hidden bg-muted">
+                              {item.thumbnail_url && (
+                                <img
+                                  src={item.thumbnail_url}
+                                  alt={item.video_title || ""}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 資訊 */}
+                          <div className="flex-1 min-w-0">
+                            <h4 className={`text-sm line-clamp-2 ${isCurrentVideo ? "font-medium text-primary" : ""}`}>
+                              {item.video_title || "未知標題"}
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                              {item.channel_name || "未知頻道"}
+                            </p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
               </Card>
             </motion.div>
           )}
@@ -511,6 +595,9 @@ export default function WatchPage() {
               </ul>
             </CardContent>
           </Card>
+
+          {/* 推薦影片 */}
+          <RecommendedVideos currentVideo={video} />
         </motion.div>
       </div>
 

@@ -47,6 +47,7 @@ function SearchContent() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pageInputValue, setPageInputValue] = useState(String(page));
 
   const fetchResults = useCallback(async () => {
     try {
@@ -74,6 +75,11 @@ function SearchContent() {
   useEffect(() => {
     fetchResults();
   }, [fetchResults]);
+
+  // 同步頁碼輸入框的值
+  useEffect(() => {
+    setPageInputValue(String(page));
+  }, [page]);
 
   const updateParams = (updates: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -164,27 +170,103 @@ function SearchContent() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex justify-center items-center gap-2 mt-8"
+              className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-8"
             >
-              <Button
-                variant="outline"
-                onClick={() => updateParams({ page: String(page - 1) })}
-                disabled={page <= 1}
-              >
-                上一頁
-              </Button>
+              {/* 頁碼按鈕區 */}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateParams({ page: String(page - 1) })}
+                  disabled={page <= 1}
+                >
+                  上一頁
+                </Button>
 
-              <span className="px-4 py-2 text-muted-foreground">
-                第 {page} 頁 / 共 {totalPages} 頁
-              </span>
+                {/* 第一頁 */}
+                {page > 3 && (
+                  <>
+                    <Button
+                      variant={page === 1 ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => updateParams({ page: "1" })}
+                    >
+                      1
+                    </Button>
+                    {page > 4 && <span className="px-2 text-muted-foreground">...</span>}
+                  </>
+                )}
 
-              <Button
-                variant="outline"
-                onClick={() => updateParams({ page: String(page + 1) })}
-                disabled={page >= totalPages}
-              >
-                下一頁
-              </Button>
+                {/* 顯示當前頁附近的頁碼 */}
+                {Array.from({ length: 5 }, (_, i) => {
+                  const pageNum = page - 2 + i;
+                  if (pageNum < 1 || pageNum > totalPages) return null;
+                  if (page > 3 && pageNum === 1) return null; // 已經顯示第一頁
+                  if (page < totalPages - 2 && pageNum === totalPages) return null; // 最後一頁單獨顯示
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={pageNum === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => updateParams({ page: String(pageNum) })}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
+
+                {/* 最後一頁 */}
+                {page < totalPages - 2 && (
+                  <>
+                    {page < totalPages - 3 && <span className="px-2 text-muted-foreground">...</span>}
+                    <Button
+                      variant={page === totalPages ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => updateParams({ page: String(totalPages) })}
+                    >
+                      {totalPages}
+                    </Button>
+                  </>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateParams({ page: String(page + 1) })}
+                  disabled={page >= totalPages}
+                >
+                  下一頁
+                </Button>
+              </div>
+
+              {/* 直接跳轉輸入 */}
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">跳至</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={pageInputValue}
+                  onChange={(e) => setPageInputValue(e.target.value)}
+                  className="w-16 h-8 px-2 text-center border rounded-md bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const targetPage = Math.max(1, Math.min(totalPages, parseInt(pageInputValue) || 1));
+                      updateParams({ page: String(targetPage) });
+                    }
+                  }}
+                  onBlur={() => {
+                    const targetPage = Math.max(1, Math.min(totalPages, parseInt(pageInputValue) || 1));
+                    if (targetPage !== page) {
+                      updateParams({ page: String(targetPage) });
+                    } else {
+                      // 如果輸入無效值，重置為當前頁碼
+                      setPageInputValue(String(page));
+                    }
+                  }}
+                />
+                <span className="text-muted-foreground">頁 / 共 {totalPages} 頁</span>
+              </div>
             </motion.div>
           )}
         </>

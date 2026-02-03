@@ -350,3 +350,54 @@ export function formatFileSize(bytes: number): string {
   }
   return `${bytes} B`;
 }
+
+// ============================================
+// 推薦功能輔助函數
+// ============================================
+
+/**
+ * 停用詞列表（中日英常見詞彙）
+ */
+const STOP_WORDS = new Set([
+  // 中文
+  "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "個",
+  "上", "也", "很", "到", "說", "要", "去", "你", "會", "著", "沒", "看", "好",
+  "自己", "這", "那", "什麼", "怎麼", "為什麼", "可以", "因為", "所以",
+  // 日文
+  "の", "に", "は", "を", "が", "で", "と", "た", "し", "て", "も", "な", "か",
+  "ら", "だ", "です", "ます", "する", "ある", "いる", "れる", "られる",
+  // 英文
+  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "must", "can", "to", "of", "in", "for", "on",
+  "with", "at", "by", "from", "or", "and", "but", "not", "this", "that",
+  "it", "as", "so", "if", "what", "when", "where", "how", "why", "who",
+  // 常見標記
+  "【", "】", "「", "」", "[", "]", "(", ")", "【", "】",
+  "live", "stream", "streaming", "archive", "vol", "part", "ep", "episode",
+]);
+
+/**
+ * 從影片標題提取搜尋關鍵字
+ * @param title 影片標題
+ * @param maxKeywords 最多返回幾個關鍵字
+ * @returns 關鍵字字串（空格分隔）
+ */
+export function extractKeywords(title: string, maxKeywords: number = 3): string {
+  // 移除特殊符號和數字
+  const cleaned = title
+    .replace(/[【】「」\[\]()（）《》<>『』""'']/g, " ")
+    .replace(/[#@!！?？。，、：；]/g, " ")
+    .replace(/\d+/g, " ");
+
+  // 分詞（簡單按空格和標點分割）
+  const words = cleaned
+    .split(/[\s\-_\/\\|・]+/)
+    .map((w) => w.trim().toLowerCase())
+    .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+
+  // 去重並取前 N 個
+  const uniqueWords = Array.from(new Set(words)).slice(0, maxKeywords);
+
+  return uniqueWords.join(" ");
+}

@@ -1,6 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import type { VideoMetadata } from "@/lib/types";
+import { useAuth } from "@/contexts/AuthContext";
+import { useWatchProgressBatch } from "@/hooks/useWatchProgressBatch";
+import { useUserLibrary } from "@/hooks/useUserLibrary";
 import { VideoCard, VideoCardSkeleton } from "./VideoCard";
 
 interface VideoGridProps {
@@ -14,6 +18,27 @@ export function VideoGrid({
   loading = false,
   skeletonCount = 12,
 }: VideoGridProps) {
+  const { user } = useAuth();
+
+  // 取得所有影片 ID
+  const videoIds = useMemo(
+    () => videos.map((v) => v.video_id),
+    [videos]
+  );
+
+  // 批次載入觀看進度（只在登入時啟用）
+  const { progressMap } = useWatchProgressBatch({
+    videoIds,
+    enabled: !!user,
+  });
+
+  // 載入用戶收藏/播放清單狀態（只呼叫一次，避免每個卡片重複呼叫）
+  const { favorites, playlistItems } = useUserLibrary();
+  const userLibrary = useMemo(
+    () => ({ favorites, playlistItems }),
+    [favorites, playlistItems]
+  );
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -48,7 +73,13 @@ export function VideoGrid({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {videos.map((video, index) => (
-        <VideoCard key={video.video_id} video={video} index={index} />
+        <VideoCard
+          key={video.video_id}
+          video={video}
+          index={index}
+          watchProgress={progressMap.get(video.video_id)}
+          userLibrary={userLibrary}
+        />
       ))}
     </div>
   );
