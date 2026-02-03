@@ -61,6 +61,7 @@ export async function addFavorite(
   userId: string,
   videoId: string,
   videoTitle?: string,
+  channelId?: string,
   channelName?: string,
   thumbnailUrl?: string
 ) {
@@ -70,6 +71,7 @@ export async function addFavorite(
       user_id: userId,
       video_id: videoId,
       video_title: videoTitle,
+      channel_id: channelId,
       channel_name: channelName,
       thumbnail_url: thumbnailUrl,
     })
@@ -379,6 +381,7 @@ export async function updateWatchProgress(
   progressSeconds: number,
   durationSeconds?: number,
   videoTitle?: string,
+  channelId?: string,
   channelName?: string,
   thumbnailUrl?: string
 ) {
@@ -392,6 +395,7 @@ export async function updateWatchProgress(
 
   // 只有在有值的時候才更新這些欄位
   if (videoTitle !== undefined) updateData.video_title = videoTitle;
+  if (channelId !== undefined) updateData.channel_id = channelId;
   if (channelName !== undefined) updateData.channel_name = channelName;
   if (thumbnailUrl !== undefined) updateData.thumbnail_url = thumbnailUrl;
 
@@ -462,6 +466,100 @@ export async function getWatchProgressBatch(
     });
   });
   return progressMap;
+}
+
+// ---------- 推薦系統輔助函數 ----------
+
+/**
+ * 取得用戶喜好的頻道（基於收藏和觀看歷史）
+ * 返回按熱度排序的頻道 ID 列表
+ */
+export async function getUserPreferredChannels(
+  userId: string,
+  limit: number = 10
+): Promise<{ channelId: string; score: number }[]> {
+  // 平行取得收藏和觀看歷史
+  const [favoritesResult, historyResult] = await Promise.all([
+    supabase
+      .from("favorites")
+      .select("channel_id")
+      .eq("user_id", userId)
+      .not("channel_id", "is", null),
+    supabase
+      .from("watch_history")
+      .select("channel_id, progress_seconds, duration_seconds")
+      .eq("user_id", userId)
+      .not("channel_id", "is", null)
+      .order("last_watched_at", { ascending: false })
+      .limit(100), // 最近 100 部觀看紀錄
+  ]);
+
+  // 計算頻道分數
+  const channelScores = new Map<string, number>();
+
+  // 收藏的頻道得分較高（每次收藏 +3 分）
+  favoritesResult.data?.forEach((fav) => {
+    if (fav.channel_id) {
+      const current = channelScores.get(fav.channel_id) || 0;
+      channelScores.set(fav.channel_id, current + 3);
+    }
+  });
+
+  // 觀看歷史（每次觀看 +1 分，觀看超過 50% 則 +2 分）
+  historyResult.data?.forEach((h) => {
+    if (h.channel_id) {
+      const current = channelScores.get(h.channel_id) || 0;
+      const watchRatio =
+        h.duration_seconds && h.duration_seconds > 0
+          ? h.progress_seconds / h.duration_seconds
+          : 0;
+      const bonus = watchRatio > 0.5 ? 2 : 1;
+      channelScores.set(h.channel_id, current + bonus);
+    }
+  });
+
+  // 排序並返回
+  return Array.from(channelScores.entries())
+    .map(([channelId, score]) => ({ channelId, score }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+/**
+ * 取得用戶最近觀看的頻道（排除當前頻道）
+ */
+export async function getRecentWatchedChannels(
+  userId: string,
+  excludeChannelId?: string,
+  limit: number = 5
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("watch_history")
+    .select("channel_id")
+    .eq("user_id", userId)
+    .not("channel_id", "is", null)
+    .order("last_watched_at", { ascending: false })
+    .limit(50);
+
+  if (error || !data) return [];
+
+  // 去重並排除當前頻道
+  const seen = new Set<string>();
+  const channels: string[] = [];
+
+  for (const item of data) {
+    if (
+      item.channel_id &&
+      !seen.has(item.channel_id) &&
+      item.channel_id !== excludeChannelId
+    ) {
+      seen.add(item.channel_id);
+      channels.push(item.channel_id);
+      if (channels.length >= limit) break;
+    }
+  }
+
+  return channels;
 }
 
 // ---------- 用戶資料相關 ----------

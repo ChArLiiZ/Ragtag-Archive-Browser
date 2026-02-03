@@ -52,6 +52,7 @@ export function useFavorites() {
           user.id,
           video.video_id,
           video.title,
+          video.channel_id,
           video.channel_name,
           getThumbnailUrl(video.video_id)
         );

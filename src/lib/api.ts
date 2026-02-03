@@ -375,29 +375,138 @@ const STOP_WORDS = new Set([
   // 常見標記
   "【", "】", "「", "」", "[", "]", "(", ")", "【", "】",
   "live", "stream", "streaming", "archive", "vol", "part", "ep", "episode",
+  // 直播/影片常見無意義詞
+  "配信", "放送", "生放送", "アーカイブ", "切り抜き", "まとめ",
+  "free", "chat", "waiting", "room", "premiere", "shorts",
 ]);
 
 /**
- * 從影片標題提取搜尋關鍵字
+ * VTuber/直播常見的有意義標籤模式
+ * 這些詞如果出現，應該被保留為關鍵字
+ */
+const IMPORTANT_PATTERNS = [
+  // 遊戲名稱常見格式
+  /^[a-z]+craft$/i,        // Minecraft, Warcraft 等
+  /^[a-z]+zone$/i,         // Warzone 等
+  /^[a-z]+legends?$/i,     // Apex Legends 等
+  /^genshin$/i,
+  /^原神$/,
+  /^minecraft$/i,
+  /^apex$/i,
+  /^valorant$/i,
+  /^fortnite$/i,
+  /^elden\s?ring$/i,
+  /^艾爾登法環$/,
+  /^雀魂$/,
+  /^麻雀$/,
+  /^雑談$/,
+  /^歌枠$/,
+  /^歌回$/,
+  /^耐久$/,
+  /^コラボ$/,
+  /^collab$/i,
+  /^cover$/i,
+  /^original$/i,
+  /^mv$/i,
+  /^asmr$/i,
+  /^karaoke$/i,
+];
+
+/**
+ * 從影片標題提取搜尋關鍵字（改進版）
+ *
+ * 改進點：
+ * 1. 保留括號內的重要內容（如遊戲名）
+ * 2. 識別 VTuber 常見的標籤格式
+ * 3. 對中文/日文進行 n-gram 處理
+ * 4. 優先提取有意義的複合詞
+ *
  * @param title 影片標題
  * @param maxKeywords 最多返回幾個關鍵字
  * @returns 關鍵字字串（空格分隔）
  */
 export function extractKeywords(title: string, maxKeywords: number = 3): string {
-  // 移除特殊符號和數字
-  const cleaned = title
-    .replace(/[【】「」\[\]()（）《》<>『』""'']/g, " ")
-    .replace(/[#@!！?？。，、：；]/g, " ")
-    .replace(/\d+/g, " ");
+  const keywords: string[] = [];
 
-  // 分詞（簡單按空格和標點分割）
-  const words = cleaned
-    .split(/[\s\-_\/\\|・]+/)
-    .map((w) => w.trim().toLowerCase())
-    .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  // 第一步：提取括號內的內容（通常是遊戲名或主題標籤）
+  const bracketContents = title.match(/【([^】]+)】|「([^」]+)」|\[([^\]]+)\]|（([^）]+)）/g);
+  if (bracketContents) {
+    bracketContents.forEach((match) => {
+      // 移除括號
+      const content = match.replace(/[【】「」\[\]（）]/g, "").trim();
+      // 如果內容看起來像遊戲名或主題，加入關鍵字
+      if (content.length >= 2 && content.length <= 30 && !isCommonPhrase(content)) {
+        keywords.push(content);
+      }
+    });
+  }
 
-  // 去重並取前 N 個
-  const uniqueWords = Array.from(new Set(words)).slice(0, maxKeywords);
+  // 第二步：處理剩餘標題
+  let cleaned = title
+    // 先移除已提取的括號內容
+    .replace(/【[^】]*】|「[^」]*」|\[[^\]]*\]|（[^）]*）/g, " ")
+    // 移除其他特殊符號
+    .replace(/[#@!！?？。，、：；~～♪♡★☆]/g, " ")
+    // 移除純數字（如日期、編號）
+    .replace(/\b\d+\b/g, " ");
 
-  return uniqueWords.join(" ");
+  // 第三步：分詞處理
+  const segments = cleaned.split(/[\s\-_\/\\|・→]+/).filter(Boolean);
+
+  segments.forEach((segment) => {
+    const trimmed = segment.trim();
+    if (trimmed.length < 2) return;
+
+    // 檢查是否符合重要模式
+    const isImportant = IMPORTANT_PATTERNS.some((p) => p.test(trimmed));
+    if (isImportant) {
+      keywords.push(trimmed);
+      return;
+    }
+
+    // 英文詞處理
+    if (/^[a-zA-Z]+$/.test(trimmed)) {
+      const lower = trimmed.toLowerCase();
+      if (!STOP_WORDS.has(lower) && trimmed.length >= 3) {
+        keywords.push(trimmed);
+      }
+      return;
+    }
+
+    // 中日文處理：提取連續的中日文字符
+    const cjkMatches = trimmed.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]+/g);
+    if (cjkMatches) {
+      cjkMatches.forEach((cjk) => {
+        if (cjk.length >= 2 && !STOP_WORDS.has(cjk)) {
+          keywords.push(cjk);
+        }
+      });
+    }
+  });
+
+  // 第四步：去重、過濾停用詞、取前 N 個
+  const uniqueKeywords = Array.from(new Set(keywords))
+    .filter((kw) => {
+      const lower = kw.toLowerCase();
+      return !STOP_WORDS.has(lower) && !STOP_WORDS.has(kw);
+    })
+    .slice(0, maxKeywords);
+
+  return uniqueKeywords.join(" ");
+}
+
+/**
+ * 判斷是否為常見的無意義短語
+ */
+function isCommonPhrase(text: string): boolean {
+  const commonPhrases = [
+    "初見", "初見プレイ", "参加型", "参加OK",
+    "メン限", "アーカイブ", "切り抜き",
+    "日本語", "中文", "English",
+    "Part", "Vol", "EP",
+  ];
+  return commonPhrases.some((p) =>
+    text.toLowerCase() === p.toLowerCase() ||
+    text === p
+  );
 }

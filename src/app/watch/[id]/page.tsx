@@ -202,6 +202,7 @@ export default function WatchPage() {
           user.id,
           videoId,
           video.title,
+          video.channel_id,
           video.channel_name,
           getThumbnailUrl(videoId, video.drive_base, video.files)
         );
@@ -225,6 +226,7 @@ export default function WatchPage() {
           currentTime,
           duration,
           video.title,
+          video.channel_id,
           video.channel_name,
           getThumbnailUrl(videoId, video.drive_base, video.files)
         );

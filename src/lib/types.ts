@@ -122,6 +122,7 @@ export interface Favorite {
   user_id: string;
   video_id: string;
   video_title: string | null;
+  channel_id: string | null;
   channel_name: string | null;
   thumbnail_url: string | null;
   created_at: string;
@@ -162,6 +163,7 @@ export interface WatchHistory {
   user_id: string;
   video_id: string;
   video_title: string | null;
+  channel_id: string | null;
   channel_name: string | null;
   thumbnail_url: string | null;
   progress_seconds: number;
