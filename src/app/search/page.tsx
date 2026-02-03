@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 const SORT_OPTIONS: { value: SortField; label: string }[] = [
+  { value: "relevance", label: "相關性" },
   { value: "archived_timestamp", label: "存檔時間" },
   { value: "upload_date", label: "上傳日期" },
   { value: "view_count", label: "觀看次數" },
@@ -35,7 +36,10 @@ function SearchContent() {
   const router = useRouter();
 
   const query = searchParams.get("q") || "";
-  const sort = (searchParams.get("sort") as SortField) || "archived_timestamp";
+
+  // 如果有搜尋關鍵字，預設使用相關性排序，否則使用存檔時間
+  const defaultSort = query ? "relevance" : "archived_timestamp";
+  const sort = (searchParams.get("sort") as SortField) || defaultSort;
   const sortOrder = (searchParams.get("sort_order") as SortOrder) || "desc";
   const page = parseInt(searchParams.get("page") || "1", 10);
 

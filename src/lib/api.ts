@@ -35,11 +35,14 @@ export async function searchVideos(
   if (options.channelId) {
     params.set("channel_id", options.channelId);
   }
-  if (options.sort) {
+  // 當使用相關性排序時，不傳送 sort 和 sort_order 參數
+  // 讓 API 使用預設的相關性評分排序
+  if (options.sort && options.sort !== "relevance") {
     params.set("sort", options.sort);
-  }
-  if (options.sortOrder) {
-    params.set("sort_order", options.sortOrder);
+    // sort_order 只在有明確指定 sort 欄位時才有意義
+    if (options.sortOrder) {
+      params.set("sort_order", options.sortOrder);
+    }
   }
   if (options.from !== undefined) {
     params.set("from", String(options.from));

@@ -87,6 +87,7 @@ export interface SearchOptions {
  * 排序欄位
  */
 export type SortField =
+  | "relevance"
   | "archived_timestamp"
   | "upload_date"
   | "duration"
