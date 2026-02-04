@@ -44,9 +44,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { ListVideo, Play, Shuffle, Pencil, Trash2, X, ArrowUpDown, GripVertical } from "lucide-react";
+import { ListVideo, Play, Shuffle, Pencil, Trash2, X, ArrowUpDown, GripVertical, Download } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { PlaylistDownload } from "@/components/playlist/PlaylistDownload";
 
 type SortOption = "position" | "title" | "channel" | "added_at";
 type SortOrder = "asc" | "desc";
@@ -371,7 +372,7 @@ export default function PlaylistDetailPage() {
                             {/* 播放按鈕 */}
                             {items.length > 0 && (
                                 <div className="flex flex-col sm:flex-row gap-4 mt-4 items-start sm:items-center">
-                                    <div className="flex gap-3">
+                                    <div className="flex flex-wrap gap-3">
                                         <Button onClick={handlePlayAll}>
                                             <Play className="w-4 h-4 mr-2" />
                                             播放全部
@@ -380,6 +381,10 @@ export default function PlaylistDetailPage() {
                                             <Shuffle className="w-4 h-4 mr-2" />
                                             隨機播放
                                         </Button>
+                                        <PlaylistDownload
+                                            playlistName={playlist.name}
+                                            items={items}
+                                        />
                                     </div>
 
                                     <div className="flex items-center space-x-2">

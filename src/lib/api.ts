@@ -6,6 +6,14 @@ import type {
   SortField,
   SortOrder,
 } from "./types";
+import {
+  videoCache,
+  searchCache,
+  channelCache,
+  getSearchCacheKey,
+  getVideoCacheKey,
+  getChannelCacheKey,
+} from "./cache";
 
 // API 基礎 URL
 // 在客戶端使用代理路徑避免 CORS 問題
@@ -19,9 +27,9 @@ const CONTENT_BASE_URL =
   "https://content.archive.ragtag.moe";
 
 /**
- * 搜尋影片
+ * 搜尋影片（原始請求，不含快取）
  */
-export async function searchVideos(
+async function searchVideosRaw(
   options: SearchOptions = {}
 ): Promise<SearchResponse> {
   const params = new URLSearchParams();
@@ -61,22 +69,47 @@ export async function searchVideos(
 }
 
 /**
- * 取得單一影片資訊
+ * 搜尋影片（帶快取和請求去重）
  */
-export async function getVideoById(
-  videoId: string
-): Promise<VideoMetadata | null> {
-  const response = await searchVideos({ videoId, size: 1 });
+export async function searchVideos(
+  options: SearchOptions = {},
+  cacheOptions?: { forceRefresh?: boolean }
+): Promise<SearchResponse> {
+  const cacheKey = getSearchCacheKey(options);
 
-  if (response.hits.hits.length === 0) {
-    return null;
-  }
-
-  return response.hits.hits[0]._source;
+  return searchCache.fetch(
+    cacheKey,
+    () => searchVideosRaw(options),
+    { forceRefresh: cacheOptions?.forceRefresh }
+  );
 }
 
 /**
- * 取得頻道影片
+ * 取得單一影片資訊（帶快取）
+ */
+export async function getVideoById(
+  videoId: string,
+  cacheOptions?: { forceRefresh?: boolean }
+): Promise<VideoMetadata | null> {
+  const cacheKey = getVideoCacheKey(videoId);
+
+  return videoCache.fetch(
+    cacheKey,
+    async () => {
+      const response = await searchVideosRaw({ videoId, size: 1 });
+
+      if (response.hits.hits.length === 0) {
+        return null;
+      }
+
+      return response.hits.hits[0]._source;
+    },
+    { forceRefresh: cacheOptions?.forceRefresh }
+  );
+}
+
+/**
+ * 取得頻道影片（帶快取）
  */
 export async function getChannelVideos(
   channelId: string,
@@ -85,15 +118,25 @@ export async function getChannelVideos(
     sortOrder?: SortOrder;
     from?: number;
     size?: number;
-  } = {}
+  } = {},
+  cacheOptions?: { forceRefresh?: boolean }
 ): Promise<SearchResponse> {
-  return searchVideos({
-    channelId,
-    sort: options.sort || "upload_date",
-    sortOrder: options.sortOrder || "desc",
-    from: options.from,
-    size: options.size || 20,
-  });
+  const cacheKey = getChannelCacheKey(
+    `${channelId}:${options.sort || "upload_date"}:${options.sortOrder || "desc"}:${options.from || 0}:${options.size || 20}`
+  );
+
+  return channelCache.fetch(
+    cacheKey,
+    () =>
+      searchVideosRaw({
+        channelId,
+        sort: options.sort || "upload_date",
+        sortOrder: options.sortOrder || "desc",
+        from: options.from,
+        size: options.size || 20,
+      }),
+    { forceRefresh: cacheOptions?.forceRefresh }
+  );
 }
 
 /**
@@ -509,4 +552,53 @@ function isCommonPhrase(text: string): boolean {
     text.toLowerCase() === p.toLowerCase() ||
     text === p
   );
+}
+
+// ============================================
+// 快取管理函數
+// ============================================
+
+/**
+ * 清除所有 API 快取
+ */
+export function clearAllCache(): void {
+  videoCache.clear();
+  searchCache.clear();
+  channelCache.clear();
+}
+
+/**
+ * 清除特定影片的快取
+ */
+export function invalidateVideoCache(videoId: string): void {
+  videoCache.invalidate(`video:${videoId}`);
+}
+
+/**
+ * 清除搜尋快取
+ */
+export function invalidateSearchCache(): void {
+  searchCache.clear();
+}
+
+/**
+ * 清除頻道快取
+ */
+export function invalidateChannelCache(channelId?: string): void {
+  if (channelId) {
+    channelCache.invalidate(`channel:${channelId}`);
+  } else {
+    channelCache.clear();
+  }
+}
+
+/**
+ * 取得快取統計資訊
+ */
+export function getCacheStats() {
+  return {
+    video: videoCache.getStats(),
+    search: searchCache.getStats(),
+    channel: channelCache.getStats(),
+  };
 }

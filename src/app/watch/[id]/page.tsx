@@ -11,11 +11,13 @@ import {
   getVideoUrl,
   getThumbnailUrl,
   getChannelAvatarUrl,
+  getChatUrl,
   formatDuration,
   formatViewCount,
   formatUploadDate,
   formatFileSize,
 } from "@/lib/api";
+import type { ChatMessage } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   addFavorite,
@@ -29,6 +31,7 @@ import { supabase } from "@/lib/supabase";
 import type { VideoMetadata, PlaylistItem, Playlist } from "@/lib/types";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
 import { RecommendedVideos } from "@/components/video/RecommendedVideos";
+import { DownloadSection } from "@/components/video/DownloadSection";
 import { AddToPlaylistModal } from "@/components/features/AddToPlaylistModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,6 +78,10 @@ export default function WatchPage() {
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [showPlaylistPanel, setShowPlaylistPanel] = useState(true);
+
+  // 聊天記錄相關
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   // 載入影片資料
   useEffect(() => {
@@ -157,6 +164,38 @@ export default function WatchPage() {
 
     fetchPlaylist();
   }, [playlistId, videoId]);
+
+  // 載入聊天記錄
+  useEffect(() => {
+    async function fetchChatMessages() {
+      if (!videoId) return;
+
+      setChatLoading(true);
+      try {
+        const chatUrl = getChatUrl(videoId);
+        const response = await fetch(chatUrl);
+        if (response.ok) {
+          const data = await response.json();
+          // 驗證資料確實是陣列，避免非陣列物件導致後續 .forEach() 錯誤
+          const messages = Array.isArray(data.messages)
+            ? data.messages
+            : Array.isArray(data)
+              ? data
+              : [];
+          setChatMessages(messages);
+        } else {
+          setChatMessages([]);
+        }
+      } catch (err) {
+        // 聊天記錄可能不存在，這是正常的
+        setChatMessages([]);
+      } finally {
+        setChatLoading(false);
+      }
+    }
+
+    fetchChatMessages();
+  }, [videoId]);
 
   // 切換隨機模式
   const toggleShuffle = useCallback(() => {
@@ -600,32 +639,12 @@ export default function WatchPage() {
             </CardContent>
           </Card>
 
-          {/* 檔案列表 */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">可用檔案</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2 text-sm">
-                {video.files.map((file) => (
-                  <li
-                    key={file.name}
-                    className="flex justify-between items-center py-1 border-b last:border-0 border-border/50"
-                  >
-                    <div className="flex items-center gap-2 truncate mr-2">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
-                      <span className="truncate text-foreground/80">
-                        {file.name}
-                      </span>
-                    </div>
-                    <span className="text-muted-foreground shrink-0 text-xs">
-                      {formatFileSize(file.size)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          {/* 下載區塊 */}
+          <DownloadSection
+            video={video}
+            chatMessages={chatMessages}
+            isLoadingChat={chatLoading}
+          />
 
           {/* 推薦影片 */}
           <RecommendedVideos currentVideo={video} />
