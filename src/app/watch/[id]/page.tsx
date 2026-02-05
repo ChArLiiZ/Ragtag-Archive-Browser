@@ -70,6 +70,7 @@ export default function WatchPage() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [initialProgress, setInitialProgress] = useState(0);
+  const [progressLoaded, setProgressLoaded] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
 
@@ -78,6 +79,7 @@ export default function WatchPage() {
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [showPlaylistPanel, setShowPlaylistPanel] = useState(true);
+  const [playedIndices, setPlayedIndices] = useState<Set<number>>(new Set()); // 隨機播放時追蹤已播放的影片索引
 
   // 聊天記錄相關
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -107,34 +109,67 @@ export default function WatchPage() {
 
   // 載入收藏狀態和觀看進度
   useEffect(() => {
+    // 用來追蹤此 effect 是否已被清理（videoId 已改變）
+    // 防止舊的非同步操作更新已過時的狀態
+    let cancelled = false;
+
     async function loadUserData() {
-      if (!user || !videoId) return;
+      // 如果沒有登入用戶，直接標記進度已載入（無需等待）
+      if (!user || !videoId) {
+        if (!cancelled) {
+          setProgressLoaded(true);
+        }
+        return;
+      }
 
       try {
         // 檢查收藏狀態
         const favorited = await isFavorited(user.id, videoId);
+        // 在每個 await 後檢查是否已取消
+        if (cancelled) return;
         setIsFavorite(favorited);
 
         // 載入觀看進度
         // 如果有 restart=true，則忽略之前的進度（從 0 開始）
         if (restartMode) {
-          setInitialProgress(0);
+          if (!cancelled) {
+            setInitialProgress(0);
+          }
         } else {
           const progress = await getWatchProgress(user.id, videoId);
+          // 再次檢查是否已取消
+          if (cancelled) return;
           if (progress?.progress_seconds) {
             setInitialProgress(progress.progress_seconds);
           }
         }
       } catch (err) {
         console.error("Failed to load user data:", err);
+      } finally {
+        // 只有在未取消時才標記進度已載入完成
+        if (!cancelled) {
+          setProgressLoaded(true);
+        }
       }
     }
 
+    // 重置載入狀態（當 videoId 改變時）
+    // 重要：必須同步重置 initialProgress，避免 race condition
+    // 如果不重置，舊影片的進度可能會在新影片進度載入前被錯誤套用
+    setProgressLoaded(false);
+    setInitialProgress(0);
     loadUserData();
+
+    // 清理函數：當 videoId 改變或組件卸載時執行
+    return () => {
+      cancelled = true;
+    };
   }, [user, videoId, restartMode]);
 
   // 載入播放清單資料
   useEffect(() => {
+    let cancelled = false; // 防止 race condition
+
     async function fetchPlaylist() {
       if (!playlistId) return;
 
@@ -146,24 +181,38 @@ export default function WatchPage() {
           .eq("id", playlistId)
           .single();
 
+        if (cancelled) return;
         if (playlistData) {
           setPlaylist(playlistData);
         }
 
         // 取得播放清單項目
         const items = await getPlaylistItems(playlistId);
+        if (cancelled) return;
+
         setPlaylistItems(items || []);
 
         // 找到目前影片的索引
         const index = items?.findIndex((item) => item.video_id === videoId) ?? -1;
         setCurrentIndex(index);
       } catch (err) {
-        console.error("Failed to fetch playlist:", err);
+        if (!cancelled) {
+          console.error("Failed to fetch playlist:", err);
+        }
       }
     }
 
     fetchPlaylist();
+
+    return () => {
+      cancelled = true;
+    };
   }, [playlistId, videoId]);
+
+  // 切換播放清單時重置已播放記錄
+  useEffect(() => {
+    setPlayedIndices(new Set());
+  }, [playlistId]);
 
   // 載入聊天記錄
   useEffect(() => {
@@ -216,12 +265,29 @@ export default function WatchPage() {
 
     let nextIndex: number;
     if (shuffleMode) {
-      // 隨機選擇（排除目前的）
+      // 記錄當前影片為已播放
+      const newPlayedIndices = new Set(playedIndices);
+      if (currentIndex >= 0) {
+        newPlayedIndices.add(currentIndex);
+      }
+
+      // 找出尚未播放的影片索引
       const availableIndices = playlistItems
         .map((_, i) => i)
-        .filter((i) => i !== currentIndex);
-      if (availableIndices.length === 0) return;
-      nextIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+        .filter((i) => !newPlayedIndices.has(i));
+
+      if (availableIndices.length === 0) {
+        // 所有影片都播放過了，重置記錄並重新開始（排除當前影片）
+        const resetIndices = playlistItems
+          .map((_, i) => i)
+          .filter((i) => i !== currentIndex);
+        if (resetIndices.length === 0) return; // 只有一部影片
+        nextIndex = resetIndices[Math.floor(Math.random() * resetIndices.length)];
+        setPlayedIndices(new Set([currentIndex])); // 重置，只保留當前影片
+      } else {
+        nextIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+        setPlayedIndices(newPlayedIndices);
+      }
     } else {
       // 順序播放
       nextIndex = currentIndex + 1;
@@ -235,7 +301,7 @@ export default function WatchPage() {
       const restartParam = restartMode ? "&restart=true" : "";
       router.push(`/watch/${nextItem.video_id}?playlist=${playlistId}${shuffleMode ? "&shuffle=true" : ""}${restartParam}`);
     }
-  }, [playlistItems, currentIndex, shuffleMode, playlistId, router, restartMode]);
+  }, [playlistItems, currentIndex, shuffleMode, playedIndices, playlistId, router, restartMode]);
 
   // 播放上一部
   const playPrevVideo = useCallback(() => {
@@ -359,6 +425,7 @@ export default function WatchPage() {
                 initialTime={initialProgress}
                 onProgressUpdate={handleProgressUpdate}
                 onEnded={playlistId ? playNextVideo : undefined}
+                autoPlay={progressLoaded}
               />
             ) : (
               <div className="aspect-video bg-muted rounded-xl flex items-center justify-center">

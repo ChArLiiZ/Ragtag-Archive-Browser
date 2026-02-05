@@ -10,6 +10,7 @@ interface VideoPlayerProps {
   initialTime?: number;
   onProgressUpdate?: (currentTime: number, duration: number) => void;
   onEnded?: () => void;
+  autoPlay?: boolean;
 }
 
 export function VideoPlayer({
@@ -18,6 +19,7 @@ export function VideoPlayer({
   initialTime = 0,
   onProgressUpdate,
   onEnded,
+  autoPlay = false,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,13 +37,49 @@ export function VideoPlayer({
 
   const hideControlsTimeout = useRef<NodeJS.Timeout | number | null>(null);
 
-  // 初始化
+  // 用於鍵盤快捷鍵的 ref（避免事件監聽器依賴狀態）
+  // 注意：volume 直接從 video.volume 讀取，不需要 ref
+  const durationRef = useRef(duration);
+
+  // 同步 ref 與狀態
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  // 當影片來源變更時重置播放狀態
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setBuffered(0);
+    setIsPlaying(false);
+    setIsLoading(true);
+
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = 0;
+    }
+  }, [src]);
+
+  // 處理 autoPlay prop 變更（因為 HTML5 autoPlay 屬性只在掛載時評估）
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !autoPlay) return;
+
+    // 當 autoPlay 變為 true 時，嘗試播放影片
+    video.play().catch((err) => {
+      // 瀏覽器可能會阻止自動播放（例如用戶未互動過頁面）
+      console.log("Auto-play was prevented:", err);
+    });
+  }, [autoPlay]);
+
+  // 初始化影片事件監聽
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     const handleLoadedMetadata = () => {
       setDuration(video.duration);
+      // 初始化時設定起始時間（如果 initialTime 已經有值）
       if (initialTime > 0 && initialTime < video.duration) {
         video.currentTime = initialTime;
       }
@@ -100,6 +138,23 @@ export function VideoPlayer({
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("ended", handleEnded);
     };
+  }, [onEnded]); // 移除 initialTime 依賴，避免重複綁定事件
+
+  // 處理 initialTime prop 變更（當進度載入完成後）
+  // 這個 effect 獨立處理 initialTime 的變化，確保即使 loadedmetadata 已經觸發過
+  // 也能正確更新 video.currentTime
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // 只有在影片已載入 metadata（duration > 0）且 initialTime 有效時才更新
+    // 這確保了當 initialTime 從 0 變成載入的進度值時，能正確 seek 到該位置
+    if (video.duration > 0 && initialTime > 0 && initialTime < video.duration) {
+      // 只有在目前時間與目標時間差距較大時才 seek（避免不必要的 seek）
+      if (Math.abs(video.currentTime - initialTime) > 1) {
+        video.currentTime = initialTime;
+      }
+    }
   }, [initialTime]);
 
   // 定期更新觀看進度
@@ -205,7 +260,7 @@ export function VideoPlayer({
     );
   };
 
-  // 鍵盤快捷鍵
+  // 鍵盤快捷鍵（使用 ref 避免頻繁重新綁定）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -215,38 +270,48 @@ export function VideoPlayer({
         return;
       }
 
+      const video = videoRef.current;
+      if (!video) return;
+
       switch (e.key) {
         case " ":
         case "k":
           e.preventDefault();
-          togglePlay();
+          if (video.paused) {
+            video.play();
+          } else {
+            video.pause();
+          }
           break;
         case "ArrowLeft":
           e.preventDefault();
-          skip(-5);
+          video.currentTime = Math.max(0, video.currentTime - 5);
           break;
         case "ArrowRight":
           e.preventDefault();
-          skip(5);
+          video.currentTime = Math.min(durationRef.current, video.currentTime + 5);
           break;
         case "ArrowUp":
           e.preventDefault();
-          if (videoRef.current) {
-            const newVolume = Math.min(1, volume + 0.1);
-            videoRef.current.volume = newVolume;
+          {
+            // 直接讀取 video.volume 確保快速連按時能取得最新值
+            const newVolume = Math.min(1, video.volume + 0.1);
+            video.volume = newVolume;
             setVolume(newVolume);
           }
           break;
         case "ArrowDown":
           e.preventDefault();
-          if (videoRef.current) {
-            const newVolume = Math.max(0, volume - 0.1);
-            videoRef.current.volume = newVolume;
+          {
+            // 直接讀取 video.volume 確保快速連按時能取得最新值
+            const newVolume = Math.max(0, video.volume - 0.1);
+            video.volume = newVolume;
             setVolume(newVolume);
           }
           break;
         case "m":
-          toggleMute();
+          video.muted = !video.muted;
+          setIsMuted(video.muted);
           break;
         case "f":
           toggleFullscreen();
@@ -256,7 +321,7 @@ export function VideoPlayer({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [volume, duration]);
+  }, []); // 空依賴，只綁定一次
 
   return (
     <div
@@ -273,6 +338,7 @@ export function VideoPlayer({
         className="w-full h-full object-contain"
         onClick={togglePlay}
         playsInline
+        autoPlay={autoPlay}
       />
 
       {/* 載入中指示器 */}

@@ -143,15 +143,23 @@ export default function PlaylistDetailPage() {
         enabled: !!user,
     });
 
-    // 移除項目
+    // 移除項目（支援失敗回滾）
     const handleRemoveItem = async (videoId: string) => {
         if (!confirm("確定要從播放清單移除此影片嗎？")) return;
 
+        // 保存原始狀態以便失敗時回滾
+        const originalItems = items;
+
+        // 樂觀更新 UI
+        setItems((prev) => prev.filter((item) => item.video_id !== videoId));
+
         try {
             await removeFromPlaylist(playlistId, videoId);
-            setItems((prev) => prev.filter((item) => item.video_id !== videoId));
         } catch (err) {
             console.error("Failed to remove item:", err);
+            // 回滾到原始狀態
+            setItems(originalItems);
+            alert("移除失敗，請稍後再試");
         }
     };
 
