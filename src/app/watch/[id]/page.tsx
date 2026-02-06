@@ -30,6 +30,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { VideoMetadata, PlaylistItem, Playlist } from "@/lib/types";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
+import { useAudioOnly } from "@/hooks/useAudioOnly";
 import { RecommendedVideos } from "@/components/video/RecommendedVideos";
 import { DownloadSection } from "@/components/video/DownloadSection";
 import { AddToPlaylistModal } from "@/components/features/AddToPlaylistModal";
@@ -63,6 +64,7 @@ export default function WatchPage() {
   const shuffleMode = searchParams.get("shuffle") === "true";
   const restartMode = searchParams.get("restart") === "true";
   const { user } = useAuth();
+  const { audioOnly, toggleAudioOnly } = useAudioOnly();
 
   const [video, setVideo] = useState<VideoMetadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -426,6 +428,8 @@ export default function WatchPage() {
                 onProgressUpdate={handleProgressUpdate}
                 onEnded={playlistId ? playNextVideo : undefined}
                 autoPlay={progressLoaded}
+                audioOnly={audioOnly}
+                onToggleAudioOnly={toggleAudioOnly}
               />
             ) : (
               <div className="aspect-video bg-muted rounded-xl flex items-center justify-center">

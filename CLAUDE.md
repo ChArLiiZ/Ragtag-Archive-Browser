@@ -19,7 +19,9 @@ npm run lint   # Run ESLint
 
 - **Framework**: Next.js 14 (App Router)
 - **UI**: React 18, Tailwind CSS, Radix UI primitives
+- **State Management**: TanStack Query (React Query) for server state
 - **Animation**: Framer Motion
+- **Drag & Drop**: @dnd-kit (sortable playlists)
 - **Icons**: lucide-react
 - **Backend**: Supabase (auth, favorites, playlists, watch history)
 - **API**: Ragtag Archive API (Elasticsearch-based search)
@@ -33,6 +35,7 @@ src/
 │   ├── api/image/                   # Image proxy API
 │   ├── auth/callback/               # OAuth callback
 │   ├── channel/[id]/                # Channel videos page
+│   ├── channels/                    # Channel browser page
 │   ├── favorites/                   # User favorites (search, sort, filter)
 │   ├── history/                     # Watch history page
 │   ├── playlists/                   # Playlists management
@@ -42,17 +45,31 @@ src/
 │   ├── watch/[id]/                  # Video player page
 │   ├── layout.tsx
 │   ├── page.tsx                     # Home page (latest/popular videos)
+│   ├── error.tsx                    # Error boundary
+│   ├── not-found.tsx                # 404 page
 │   └── globals.css
 ├── components/
 │   ├── auth/                        # LoginModal, UserMenu
 │   ├── features/                    # AddToPlaylistModal
 │   ├── layout/                      # Header
+│   ├── playlist/                    # Playlist components
+│   │   ├── SortablePlaylistItem.tsx # Drag-and-drop playlist item
+│   │   └── PlaylistDownload.tsx     # Playlist download options
+│   ├── providers/                   # React providers
+│   │   └── QueryProvider.tsx        # TanStack Query provider
+│   ├── search/                      # Search components
+│   │   ├── SearchFilters.tsx        # Advanced search filters
+│   │   └── SearchSuggestions.tsx    # Search autocomplete
+│   ├── settings/                    # Settings components
+│   │   └── AvatarUpload.tsx         # Profile avatar upload
 │   ├── ui/                          # Reusable UI (shadcn/ui style)
 │   │   ├── avatar.tsx, button.tsx, card.tsx
-│   │   ├── dialog.tsx, dropdown-menu.tsx
-│   │   ├── input.tsx, select.tsx, skeleton.tsx
+│   │   ├── collapsible.tsx, dialog.tsx, dropdown-menu.tsx
+│   │   ├── input.tsx, label.tsx, progress.tsx
+│   │   ├── select.tsx, skeleton.tsx, switch.tsx
 │   └── video/
 │       ├── ChatReplay.tsx           # Time-synced chat replay
+│       ├── DownloadSection.tsx      # Video download options
 │       ├── RecommendedVideoCard.tsx # Compact recommendation card
 │       ├── RecommendedVideos.tsx    # Smart recommendation engine
 │       ├── VideoCard.tsx            # Video card with progress
@@ -63,12 +80,16 @@ src/
 │   └── ThemeContext.tsx             # Dark/light theme
 ├── hooks/
 │   ├── useFavorites.ts              # Favorite management
+│   ├── useRecommendedVideos.ts      # Video recommendations (TanStack Query)
 │   ├── useSearch.ts                 # Search with pagination
+│   ├── useSearchHistory.ts          # Local search history
 │   ├── useUserLibrary.ts            # Library status (cached)
 │   ├── useWatchProgress.ts          # Single video progress
 │   └── useWatchProgressBatch.ts     # Batch progress loading
 └── lib/
     ├── api.ts                       # Ragtag Archive API client
+    ├── cache.ts                     # API caching layer
+    ├── download.ts                  # Download utilities
     ├── supabase.ts                  # Database operations
     ├── types.ts                     # TypeScript definitions
     └── utils.ts                     # Utility functions
@@ -79,6 +100,8 @@ src/
 - `src/lib/api.ts` - API client for video search, URL generation, keyword extraction
 - `src/lib/supabase.ts` - Database operations (favorites, playlists, history, profiles)
 - `src/lib/types.ts` - All TypeScript interfaces
+- `src/lib/cache.ts` - API caching layer with deduplication
+- `src/lib/download.ts` - Download utilities (chat, metadata, batch scripts)
 - `src/contexts/AuthContext.tsx` - Authentication state management
 - `src/contexts/ThemeContext.tsx` - Dark/light theme management
 
@@ -115,6 +138,34 @@ formatFileSize(bytes)           // KB, MB, GB
 
 // Recommendations
 extractKeywords(title, max)     // Smart keyword extraction (CJK-aware)
+
+// Caching (src/lib/cache.ts)
+videoCache.fetch(key, fetcher)  // Video data cache (10min TTL)
+searchCache.fetch(key, fetcher) // Search results cache (3min TTL)
+channelCache.fetch(key, fetcher) // Channel data cache (15min TTL)
+```
+
+### Download Utilities (src/lib/download.ts)
+```typescript
+// Single file downloads
+downloadFile(url, filename)             // Trigger browser download
+downloadBlob(blob, filename)            // Download Blob data
+downloadJson(data, filename)            // Download JSON
+downloadText(text, filename)            // Download text file
+
+// Chat downloads
+downloadChatAsText(messages, filename)  // Chat as plain text
+downloadChatAsJson(messages, filename)  // Chat as JSON
+
+// Video metadata
+downloadVideoMetadata(video, filename)  // Metadata as JSON
+downloadVideoMetadataAsText(...)        // Metadata as readable text
+
+// Playlist batch downloads
+generatePlaylistDownloadScript(items, options)  // bash/powershell/cmd scripts
+downloadPlaylistScript(items, name, format)     // Download script file
+generatePlaylistUrlList(items, options)         // URL list for download managers
+downloadPlaylistUrlList(items, name)            // Download URL list
 ```
 
 ### Supabase Tables & Functions
@@ -189,6 +240,18 @@ const { progress, duration, progressPercent, updateProgress, saveImmediately } =
 const { progressMap, loading, error, getProgressPercent, reload } = useWatchProgressBatch(videoIds)
 ```
 
+### useSearchHistory
+```typescript
+// localStorage-based search history (max 15 items)
+const { history, addToHistory, removeFromHistory, clearHistory } = useSearchHistory()
+```
+
+### useRecommendedVideos
+```typescript
+// TanStack Query-based recommendations with 5min cache
+const { data: videos, isLoading, error } = useRecommendedVideos(currentVideo)
+```
+
 ## Type Definitions
 
 ### Core Types
@@ -242,6 +305,20 @@ interface WatchHistory {
   channel_name?: string;
   thumbnail_url?: string;
 }
+
+interface SearchFilters {
+  dateRange?: { start?: string; end?: string };
+  durationRange?: { min?: number; max?: number };
+  viewCountRange?: { min?: number; max?: number };
+}
+
+interface ChannelInfo {
+  channel_id: string;
+  channel_name: string;
+  video_count: number;
+  total_views?: number;
+  latest_video_date?: string;
+}
 ```
 
 ## Environment Variables
@@ -283,6 +360,8 @@ import { searchVideos } from "@/lib/api";
 ### Performance Patterns
 - Batch loading with `useWatchProgressBatch()` for multiple videos
 - Global caching in `useUserLibrary()` with 30s TTL
+- TanStack Query for server state management (recommendations, etc.)
+- API caching layer with request deduplication (`src/lib/cache.ts`)
 - Parallel API calls where possible
 - Debounced auto-save for watch progress (10s interval)
 - Lazy loading for images
@@ -331,6 +410,26 @@ import { searchVideos } from "@/lib/api";
 - Public/private indicator
 - Inline playlist creation
 - Delete with confirmation
+- Drag-and-drop reordering (@dnd-kit)
+- Batch download scripts (bash/PowerShell/cmd)
+
+### Channels Page
+- Channel browser with aggregated stats
+- Sort by: video count, latest update, name
+- Search/filter channels
+- Pagination
+
+### Search Features
+- Advanced filters (date range, duration, view count)
+- Search history (localStorage, max 15 items)
+- Search suggestions/autocomplete
+
+### Download Features
+- Single video/file downloads
+- Chat replay export (text/JSON)
+- Video metadata export
+- Playlist batch download scripts
+- URL list generation for download managers
 
 ## Common Tasks
 
@@ -369,3 +468,6 @@ import { searchVideos } from "@/lib/api";
 - The app works without Supabase (user features disabled)
 - Default search sort: `relevance` (when query present)
 - Keyword extraction supports CJK text with n-grams and stop word filtering
+- Search history stored in localStorage (`archive-browser-search-history`)
+- API cache instances: `videoCache` (10min), `searchCache` (3min), `channelCache` (15min)
+- Playlist items support drag-and-drop reordering via @dnd-kit

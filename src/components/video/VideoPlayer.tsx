@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDuration } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface VideoPlayerProps {
   src: string;
@@ -11,6 +12,8 @@ interface VideoPlayerProps {
   onProgressUpdate?: (currentTime: number, duration: number) => void;
   onEnded?: () => void;
   autoPlay?: boolean;
+  audioOnly?: boolean;
+  onToggleAudioOnly?: () => void;
 }
 
 export function VideoPlayer({
@@ -20,8 +23,11 @@ export function VideoPlayer({
   onProgressUpdate,
   onEnded,
   autoPlay = false,
+  audioOnly = false,
+  onToggleAudioOnly,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
@@ -38,13 +44,70 @@ export function VideoPlayer({
   const hideControlsTimeout = useRef<NodeJS.Timeout | number | null>(null);
 
   // 用於鍵盤快捷鍵的 ref（避免事件監聽器依賴狀態）
-  // 注意：volume 直接從 video.volume 讀取，不需要 ref
+  // 注意：volume 直接從 media element 讀取，不需要 ref
   const durationRef = useRef(duration);
+  const initialTimeRef = useRef(initialTime);
+  const onToggleAudioOnlyRef = useRef(onToggleAudioOnly);
+  const audioOnlyRef = useRef(audioOnly);
+
+  // 取得目前使用的媒體元素（video 或 audio）
+  const getActiveMedia = useCallback((): HTMLMediaElement | null => {
+    return audioOnlyRef.current ? audioRef.current : videoRef.current;
+  }, []);
 
   // 同步 ref 與狀態
   useEffect(() => {
     durationRef.current = duration;
   }, [duration]);
+
+  useEffect(() => {
+    initialTimeRef.current = initialTime;
+  }, [initialTime]);
+
+  useEffect(() => {
+    onToggleAudioOnlyRef.current = onToggleAudioOnly;
+  }, [onToggleAudioOnly]);
+
+  useEffect(() => {
+    audioOnlyRef.current = audioOnly;
+  }, [audioOnly]);
+
+  // 純音訊模式切換：在 video 和 audio 之間同步狀態
+  useEffect(() => {
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (!video || !audio) return;
+
+    if (audioOnly) {
+      // video → audio：同步狀態後切換
+      audio.currentTime = video.currentTime;
+      audio.volume = video.volume;
+      audio.muted = video.muted;
+      // 同步 duration（audio 的 loadedmetadata 在非純音訊模式下不會設定 duration）
+      if (audio.duration && !isNaN(audio.duration)) {
+        setDuration(audio.duration);
+      }
+      const wasPlaying = !video.paused;
+      video.pause();
+      if (wasPlaying) {
+        audio.play().catch(() => {});
+      }
+    } else {
+      // audio → video：同步狀態後切換
+      video.currentTime = audio.currentTime;
+      video.volume = audio.volume;
+      video.muted = audio.muted;
+      // 同步 duration（video 的 duration 可能與 audio 不同，切回時需要更新）
+      if (video.duration && !isNaN(video.duration)) {
+        setDuration(video.duration);
+      }
+      const wasPlaying = !audio.paused;
+      audio.pause();
+      if (wasPlaying) {
+        video.play().catch(() => {});
+      }
+    }
+  }, [audioOnly]);
 
   // 當影片來源變更時重置播放狀態
   useEffect(() => {
@@ -58,19 +121,24 @@ export function VideoPlayer({
     if (video) {
       video.currentTime = 0;
     }
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
   }, [src]);
 
   // 處理 autoPlay prop 變更（因為 HTML5 autoPlay 屬性只在掛載時評估）
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !autoPlay) return;
+    const media = getActiveMedia();
+    if (!media || !autoPlay) return;
 
-    // 當 autoPlay 變為 true 時，嘗試播放影片
-    video.play().catch((err) => {
+    // 當 autoPlay 變為 true 時，嘗試播放
+    media.play().catch((err) => {
       // 瀏覽器可能會阻止自動播放（例如用戶未互動過頁面）
       console.log("Auto-play was prevented:", err);
     });
-  }, [autoPlay]);
+  }, [autoPlay, getActiveMedia]);
 
   // 初始化影片事件監聽
   useEffect(() => {
@@ -78,44 +146,51 @@ export function VideoPlayer({
     if (!video) return;
 
     const handleLoadedMetadata = () => {
+      // 純音訊模式下忽略 video 的 loadedmetadata，避免覆蓋 audio 設定的 duration
+      if (audioOnlyRef.current) return;
       setDuration(video.duration);
-      // 初始化時設定起始時間（如果 initialTime 已經有值）
-      if (initialTime > 0 && initialTime < video.duration) {
-        video.currentTime = initialTime;
+      // 初始化時設定起始時間（使用 ref 確保讀取最新值，避免閉包捕獲舊值）
+      const time = initialTimeRef.current;
+      if (time > 0 && time < video.duration) {
+        video.currentTime = time;
       }
     };
 
     const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
+      if (!audioOnlyRef.current) {
+        setCurrentTime(video.currentTime);
+      }
     };
 
     const handleProgress = () => {
-      if (video.buffered.length > 0) {
+      if (!audioOnlyRef.current && video.buffered.length > 0) {
         setBuffered(video.buffered.end(video.buffered.length - 1));
       }
     };
 
     const handleCanPlay = () => {
-      setIsLoading(false);
+      if (!audioOnlyRef.current) setIsLoading(false);
     };
 
     const handleWaiting = () => {
-      setIsLoading(true);
+      if (!audioOnlyRef.current) setIsLoading(true);
     };
 
     const handlePlaying = () => {
-      setIsLoading(false);
-      setIsPlaying(true);
+      if (!audioOnlyRef.current) {
+        setIsLoading(false);
+        setIsPlaying(true);
+      }
     };
 
     const handlePause = () => {
-      setIsPlaying(false);
+      if (!audioOnlyRef.current) setIsPlaying(false);
     };
 
     const handleEnded = () => {
-      setIsPlaying(false);
-      if (onEnded) {
-        onEnded();
+      if (!audioOnlyRef.current) {
+        setIsPlaying(false);
+        if (onEnded) onEnded();
       }
     };
 
@@ -138,37 +213,115 @@ export function VideoPlayer({
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("ended", handleEnded);
     };
-  }, [onEnded]); // 移除 initialTime 依賴，避免重複綁定事件
+  }, [src, onEnded]); // 加入 src：換源時重新綁定事件，確保 loadedmetadata 觸發時使用最新的閉包
+
+  // audio 元素事件監聽（純音訊模式時使用）
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleTimeUpdate = () => {
+      if (audioOnlyRef.current) {
+        setCurrentTime(audio.currentTime);
+      }
+    };
+
+    const handleProgress = () => {
+      if (audioOnlyRef.current && audio.buffered.length > 0) {
+        setBuffered(audio.buffered.end(audio.buffered.length - 1));
+      }
+    };
+
+    const handleCanPlay = () => {
+      if (audioOnlyRef.current) setIsLoading(false);
+    };
+
+    const handleWaiting = () => {
+      if (audioOnlyRef.current) setIsLoading(true);
+    };
+
+    const handlePlaying = () => {
+      if (audioOnlyRef.current) {
+        setIsLoading(false);
+        setIsPlaying(true);
+      }
+    };
+
+    const handlePause = () => {
+      if (audioOnlyRef.current) setIsPlaying(false);
+    };
+
+    const handleEnded = () => {
+      if (audioOnlyRef.current) {
+        setIsPlaying(false);
+        if (onEnded) onEnded();
+      }
+    };
+
+    const handleLoadedMetadata = () => {
+      // 僅在純音訊模式下設定 duration，避免與 video 的 duration 產生競態覆蓋
+      if (audioOnlyRef.current) {
+        setDuration(audio.duration);
+        // 使用 ref 確保讀取最新值，避免閉包捕獲舊值
+        const time = initialTimeRef.current;
+        if (time > 0 && time < audio.duration) {
+          audio.currentTime = time;
+        }
+      }
+    };
+
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("progress", handleProgress);
+    audio.addEventListener("canplay", handleCanPlay);
+    audio.addEventListener("waiting", handleWaiting);
+    audio.addEventListener("playing", handlePlaying);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("ended", handleEnded);
+
+    return () => {
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("progress", handleProgress);
+      audio.removeEventListener("canplay", handleCanPlay);
+      audio.removeEventListener("waiting", handleWaiting);
+      audio.removeEventListener("playing", handlePlaying);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("ended", handleEnded);
+    };
+  }, [src, onEnded]); // 加入 src：換源時重新綁定事件，確保 loadedmetadata 觸發時使用最新的閉包
 
   // 處理 initialTime prop 變更（當進度載入完成後）
   // 這個 effect 獨立處理 initialTime 的變化，確保即使 loadedmetadata 已經觸發過
-  // 也能正確更新 video.currentTime
+  // 也能正確更新 currentTime（video 和 audio 都需要處理）
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    // 根據目前模式選擇正確的媒體元素
+    const media = audioOnly ? audioRef.current : videoRef.current;
+    if (!media) return;
 
-    // 只有在影片已載入 metadata（duration > 0）且 initialTime 有效時才更新
+    // 只有在媒體已載入 metadata（duration > 0）且 initialTime 有效時才更新
     // 這確保了當 initialTime 從 0 變成載入的進度值時，能正確 seek 到該位置
-    if (video.duration > 0 && initialTime > 0 && initialTime < video.duration) {
+    if (media.duration > 0 && initialTime > 0 && initialTime < media.duration) {
       // 只有在目前時間與目標時間差距較大時才 seek（避免不必要的 seek）
-      if (Math.abs(video.currentTime - initialTime) > 1) {
-        video.currentTime = initialTime;
+      if (Math.abs(media.currentTime - initialTime) > 1) {
+        media.currentTime = initialTime;
       }
     }
-  }, [initialTime]);
+  }, [initialTime, audioOnly]);
 
   // 定期更新觀看進度
   useEffect(() => {
     if (!onProgressUpdate || duration === 0) return;
 
     const interval = setInterval(() => {
-      if (videoRef.current && isPlaying) {
-        onProgressUpdate(videoRef.current.currentTime, duration);
+      const media = getActiveMedia();
+      if (media && isPlaying) {
+        onProgressUpdate(media.currentTime, duration);
       }
     }, 10000); // 每 10 秒更新一次
 
     return () => clearInterval(interval);
-  }, [onProgressUpdate, duration, isPlaying]);
+  }, [onProgressUpdate, duration, isPlaying, getActiveMedia]);
 
   // 全螢幕變化監聽
   useEffect(() => {
@@ -180,6 +333,13 @@ export function VideoPlayer({
     return () =>
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  // 純音訊模式啟用時自動退出全螢幕
+  useEffect(() => {
+    if (audioOnly && isFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, [audioOnly, isFullscreen]);
 
   // 自動隱藏控制列
   const resetHideControlsTimeout = useCallback(() => {
@@ -196,49 +356,50 @@ export function VideoPlayer({
 
   // 播放/暫停
   const togglePlay = () => {
-    const video = videoRef.current;
-    if (!video) return;
+    const media = getActiveMedia();
+    if (!media) return;
 
     if (isPlaying) {
-      video.pause();
+      media.pause();
     } else {
-      video.play();
+      media.play();
     }
   };
 
   // 靜音切換
   const toggleMute = () => {
-    const video = videoRef.current;
-    if (!video) return;
+    const media = getActiveMedia();
+    if (!media) return;
 
-    video.muted = !isMuted;
+    media.muted = !isMuted;
     setIsMuted(!isMuted);
   };
 
   // 音量調整
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const video = videoRef.current;
-    if (!video) return;
+    const media = getActiveMedia();
+    if (!media) return;
 
     const newVolume = parseFloat(e.target.value);
-    video.volume = newVolume;
+    media.volume = newVolume;
     setVolume(newVolume);
     setIsMuted(newVolume === 0);
   };
 
   // 進度條點擊
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const video = videoRef.current;
+    const media = getActiveMedia();
     const progressBar = progressRef.current;
-    if (!video || !progressBar) return;
+    if (!media || !progressBar) return;
 
     const rect = progressBar.getBoundingClientRect();
     const pos = (e.clientX - rect.left) / rect.width;
-    video.currentTime = pos * duration;
+    media.currentTime = pos * duration;
   };
 
   // 全螢幕切換
   const toggleFullscreen = () => {
+    if (audioOnly) return; // 純音訊模式下不允許全螢幕
     const container = containerRef.current;
     if (!container) return;
 
@@ -251,12 +412,12 @@ export function VideoPlayer({
 
   // 快進/快退
   const skip = (seconds: number) => {
-    const video = videoRef.current;
-    if (!video) return;
+    const media = getActiveMedia();
+    if (!media) return;
 
-    video.currentTime = Math.max(
+    media.currentTime = Math.max(
       0,
-      Math.min(duration, video.currentTime + seconds)
+      Math.min(duration, media.currentTime + seconds)
     );
   };
 
@@ -270,51 +431,58 @@ export function VideoPlayer({
         return;
       }
 
-      const video = videoRef.current;
-      if (!video) return;
+      const media = audioOnlyRef.current
+        ? audioRef.current
+        : videoRef.current;
+      if (!media) return;
 
       switch (e.key) {
         case " ":
         case "k":
           e.preventDefault();
-          if (video.paused) {
-            video.play();
+          if (media.paused) {
+            media.play();
           } else {
-            video.pause();
+            media.pause();
           }
           break;
         case "ArrowLeft":
           e.preventDefault();
-          video.currentTime = Math.max(0, video.currentTime - 5);
+          media.currentTime = Math.max(0, media.currentTime - 5);
           break;
         case "ArrowRight":
           e.preventDefault();
-          video.currentTime = Math.min(durationRef.current, video.currentTime + 5);
+          media.currentTime = Math.min(durationRef.current, media.currentTime + 5);
           break;
         case "ArrowUp":
           e.preventDefault();
           {
-            // 直接讀取 video.volume 確保快速連按時能取得最新值
-            const newVolume = Math.min(1, video.volume + 0.1);
-            video.volume = newVolume;
+            // 直接讀取 media.volume 確保快速連按時能取得最新值
+            const newVolume = Math.min(1, media.volume + 0.1);
+            media.volume = newVolume;
             setVolume(newVolume);
           }
           break;
         case "ArrowDown":
           e.preventDefault();
           {
-            // 直接讀取 video.volume 確保快速連按時能取得最新值
-            const newVolume = Math.max(0, video.volume - 0.1);
-            video.volume = newVolume;
+            // 直接讀取 media.volume 確保快速連按時能取得最新值
+            const newVolume = Math.max(0, media.volume - 0.1);
+            media.volume = newVolume;
             setVolume(newVolume);
           }
           break;
         case "m":
-          video.muted = !video.muted;
-          setIsMuted(video.muted);
+          media.muted = !media.muted;
+          setIsMuted(media.muted);
           break;
         case "f":
           toggleFullscreen();
+          break;
+        case "a":
+          if (onToggleAudioOnlyRef.current) {
+            onToggleAudioOnlyRef.current();
+          }
           break;
       }
     };
@@ -335,11 +503,53 @@ export function VideoPlayer({
         ref={videoRef}
         src={src}
         poster={poster}
-        className="w-full h-full object-contain"
+        className={cn("w-full h-full object-contain", audioOnly && "hidden")}
         onClick={togglePlay}
         playsInline
         autoPlay={autoPlay}
       />
+
+      {/* 隱藏的 audio 元素（純音訊模式使用，只解碼音訊不解碼影片） */}
+      <audio ref={audioRef} src={src} preload="metadata" />
+
+      {/* 純音訊模式覆蓋層 */}
+      <AnimatePresence>
+        {audioOnly && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 flex flex-col items-center justify-center bg-black z-10"
+            onClick={togglePlay}
+          >
+            {poster && (
+              <img
+                src={poster}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover opacity-20 blur-sm"
+              />
+            )}
+            <div className="relative z-10 flex flex-col items-center gap-3">
+              <svg
+                className="w-16 h-16 text-white/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"
+                />
+              </svg>
+              <span className="text-white/60 text-sm font-medium">
+                純音訊模式
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 載入中指示器 */}
       <AnimatePresence>
@@ -348,7 +558,7 @@ export function VideoPlayer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex items-center justify-center bg-black/50"
+            className="absolute inset-0 flex items-center justify-center bg-black/50 z-20"
           >
             <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
           </motion.div>
@@ -363,7 +573,7 @@ export function VideoPlayer({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             onClick={togglePlay}
-            className="absolute inset-0 flex items-center justify-center bg-black/30"
+            className="absolute inset-0 flex items-center justify-center bg-black/30 z-20"
           >
             <div className="w-20 h-20 rounded-full bg-accent/80 flex items-center justify-center hover:bg-accent transition-colors">
               <svg
@@ -385,7 +595,7 @@ export function VideoPlayer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4"
+            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 z-30"
           >
             {/* 進度條 */}
             <div
@@ -478,10 +688,38 @@ export function VideoPlayer({
 
               {/* 右側控制 */}
               <div className="flex items-center gap-3">
+                {/* 純音訊模式切換 */}
+                {onToggleAudioOnly && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleAudioOnly();
+                    }}
+                    className={cn(
+                      "hover:text-accent transition-colors",
+                      audioOnly && "text-accent"
+                    )}
+                    title={audioOnly ? "關閉純音訊模式 (A)" : "純音訊模式 (A)"}
+                  >
+                    {audioOnly ? (
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+
                 {/* 全螢幕 */}
                 <button
                   onClick={toggleFullscreen}
-                  className="hover:text-accent transition-colors"
+                  className={cn(
+                    "hover:text-accent transition-colors",
+                    audioOnly && "opacity-30 cursor-not-allowed"
+                  )}
                 >
                   {isFullscreen ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
