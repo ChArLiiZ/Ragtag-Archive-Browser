@@ -74,7 +74,7 @@ src/
 │       ├── RecommendedVideos.tsx    # Smart recommendation engine
 │       ├── VideoCard.tsx            # Video card with progress
 │       ├── VideoGrid.tsx            # Grid layout
-│       └── VideoPlayer.tsx          # HLS video player
+│       └── VideoPlayer.tsx          # HLS video player with audio-only mode
 ├── contexts/
 │   ├── AuthContext.tsx              # Authentication state
 │   └── ThemeContext.tsx             # Dark/light theme
@@ -84,6 +84,8 @@ src/
 │   ├── useSearch.ts                 # Search with pagination
 │   ├── useSearchHistory.ts          # Local search history
 │   ├── useUserLibrary.ts            # Library status (cached)
+│   ├── useAudioOnly.ts              # Audio-only playback mode
+│   ├── useVolume.ts                 # Volume/mute persistence
 │   ├── useWatchProgress.ts          # Single video progress
 │   └── useWatchProgressBatch.ts     # Batch progress loading
 └── lib/
@@ -138,6 +140,13 @@ formatFileSize(bytes)           // KB, MB, GB
 
 // Recommendations
 extractKeywords(title, max)     // Smart keyword extraction (CJK-aware)
+
+// Cache Management
+clearAllCache()                 // Clear all caches
+invalidateVideoCache(videoId)   // Invalidate specific video cache
+invalidateSearchCache()         // Clear search cache
+invalidateChannelCache()        // Clear channel cache
+getCacheStats()                 // Get cache hit/miss statistics
 
 // Caching (src/lib/cache.ts)
 videoCache.fetch(key, fetcher)  // Video data cache (10min TTL)
@@ -252,6 +261,18 @@ const { history, addToHistory, removeFromHistory, clearHistory } = useSearchHist
 const { data: videos, isLoading, error } = useRecommendedVideos(currentVideo)
 ```
 
+### useAudioOnly
+```typescript
+// localStorage-based audio-only playback mode toggle
+const { isAudioOnly, toggleAudioOnly, setAudioOnly } = useAudioOnly()
+```
+
+### useVolume
+```typescript
+// localStorage-based volume and mute state persistence
+const { volume, isMuted, setVolume, setIsMuted, toggleMute } = useVolume()
+```
+
 ## Type Definitions
 
 ### Core Types
@@ -328,6 +349,8 @@ NEXT_PUBLIC_SUPABASE_URL=<supabase-url>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase-anon-key>
 NEXT_PUBLIC_API_BASE_URL=https://archive.ragtag.moe
 NEXT_PUBLIC_CONTENT_BASE_URL=https://content.archive.ragtag.moe
+NEXT_PUBLIC_SITE_NAME=Ragtag Archive Browser
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 ## Code Conventions
@@ -389,7 +412,7 @@ import { searchVideos } from "@/lib/api";
 - Popular videos (3 videos)
 
 ### Watch Page Features
-- HLS video player with progress tracking
+- HLS video player with progress tracking and audio-only mode
 - Resume from last position
 - Playlist navigation (next/previous/shuffle)
 - Auto-play next in playlist
@@ -471,3 +494,5 @@ import { searchVideos } from "@/lib/api";
 - Search history stored in localStorage (`archive-browser-search-history`)
 - API cache instances: `videoCache` (10min), `searchCache` (3min), `channelCache` (15min)
 - Playlist items support drag-and-drop reordering via @dnd-kit
+- Audio-only mode persists via localStorage (`archive-browser-audio-only`)
+- Volume/mute state persists via localStorage (`archive-browser-volume`, `archive-browser-muted`)

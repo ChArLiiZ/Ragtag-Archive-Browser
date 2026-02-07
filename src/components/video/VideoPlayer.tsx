@@ -14,6 +14,10 @@ interface VideoPlayerProps {
   autoPlay?: boolean;
   audioOnly?: boolean;
   onToggleAudioOnly?: () => void;
+  volume?: number;
+  isMuted?: boolean;
+  onVolumeChange?: (volume: number) => void;
+  onMutedChange?: (muted: boolean) => void;
 }
 
 export function VideoPlayer({
@@ -25,6 +29,10 @@ export function VideoPlayer({
   autoPlay = false,
   audioOnly = false,
   onToggleAudioOnly,
+  volume: externalVolume,
+  isMuted: externalIsMuted,
+  onVolumeChange,
+  onMutedChange,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -34,8 +42,11 @@ export function VideoPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
+  // 音量：支援受控（external）與非受控模式
+  const [internalVolume, setInternalVolume] = useState(externalVolume ?? 1);
+  const [internalMuted, setInternalMuted] = useState(externalIsMuted ?? false);
+  const volume = externalVolume ?? internalVolume;
+  const isMuted = externalIsMuted ?? internalMuted;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [buffered, setBuffered] = useState(0);
@@ -49,6 +60,8 @@ export function VideoPlayer({
   const initialTimeRef = useRef(initialTime);
   const onToggleAudioOnlyRef = useRef(onToggleAudioOnly);
   const audioOnlyRef = useRef(audioOnly);
+  const onVolumeChangeRef = useRef(onVolumeChange);
+  const onMutedChangeRef = useRef(onMutedChange);
 
   // 取得目前使用的媒體元素（video 或 audio）
   const getActiveMedia = useCallback((): HTMLMediaElement | null => {
@@ -71,6 +84,32 @@ export function VideoPlayer({
   useEffect(() => {
     audioOnlyRef.current = audioOnly;
   }, [audioOnly]);
+
+  useEffect(() => {
+    onVolumeChangeRef.current = onVolumeChange;
+  }, [onVolumeChange]);
+
+  useEffect(() => {
+    onMutedChangeRef.current = onMutedChange;
+  }, [onMutedChange]);
+
+  // 當外部受控的音量 prop 變更時，同步到媒體元素
+  useEffect(() => {
+    if (externalVolume === undefined) return;
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (video) video.volume = externalVolume;
+    if (audio) audio.volume = externalVolume;
+  }, [externalVolume]);
+
+  // 當外部受控的靜音 prop 變更時，同步到媒體元素
+  useEffect(() => {
+    if (externalIsMuted === undefined) return;
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (video) video.muted = externalIsMuted;
+    if (audio) audio.muted = externalIsMuted;
+  }, [externalIsMuted]);
 
   // 純音訊模式切換：在 video 和 audio 之間同步狀態
   useEffect(() => {
@@ -371,8 +410,10 @@ export function VideoPlayer({
     const media = getActiveMedia();
     if (!media) return;
 
-    media.muted = !isMuted;
-    setIsMuted(!isMuted);
+    const newMuted = !isMuted;
+    media.muted = newMuted;
+    setInternalMuted(newMuted);
+    onMutedChange?.(newMuted);
   };
 
   // 音量調整
@@ -382,8 +423,11 @@ export function VideoPlayer({
 
     const newVolume = parseFloat(e.target.value);
     media.volume = newVolume;
-    setVolume(newVolume);
-    setIsMuted(newVolume === 0);
+    setInternalVolume(newVolume);
+    onVolumeChange?.(newVolume);
+    const newMuted = newVolume === 0;
+    setInternalMuted(newMuted);
+    onMutedChange?.(newMuted);
   };
 
   // 進度條點擊
@@ -460,7 +504,8 @@ export function VideoPlayer({
             // 直接讀取 media.volume 確保快速連按時能取得最新值
             const newVolume = Math.min(1, media.volume + 0.1);
             media.volume = newVolume;
-            setVolume(newVolume);
+            setInternalVolume(newVolume);
+            onVolumeChangeRef.current?.(newVolume);
           }
           break;
         case "ArrowDown":
@@ -469,12 +514,14 @@ export function VideoPlayer({
             // 直接讀取 media.volume 確保快速連按時能取得最新值
             const newVolume = Math.max(0, media.volume - 0.1);
             media.volume = newVolume;
-            setVolume(newVolume);
+            setInternalVolume(newVolume);
+            onVolumeChangeRef.current?.(newVolume);
           }
           break;
         case "m":
           media.muted = !media.muted;
-          setIsMuted(media.muted);
+          setInternalMuted(media.muted);
+          onMutedChangeRef.current?.(media.muted);
           break;
         case "f":
           toggleFullscreen();
