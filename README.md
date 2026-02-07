@@ -7,11 +7,16 @@
 - 🎨 **現代化 UI** - Glassmorphism 玻璃擬態設計風格
 - 🔍 **強大搜尋** - 支援關鍵字搜尋、多種排序選項
 - 📺 **影片播放** - 自訂播放器，支援鍵盤快捷鍵
+- 🔇 **純音模式** - 音訊播放模式，節省頻寬
+- 🔊 **音量記憶** - 自動保存音量與靜音狀態
+- ⏰ **睡眠計時** - 設定時間後自動暫停播放
 - 🔐 **用戶認證** - Email 登入/註冊、OAuth 第三方登入
 - ❤️ **收藏功能** - 收藏喜愛的影片
-- 📋 **播放清單** - 建立和管理播放清單
+- 📋 **播放清單** - 建立和管理播放清單，支援拖放排序
 - 📍 **觀看進度** - 自動記憶觀看進度
 - 💬 **聊天重播** - 同步顯示直播聊天記錄
+- 📥 **下載功能** - 影片、聊天記錄、播放清單批次下載腳本
+- 🧠 **智能推薦** - 根據觀看紀錄和偏好推薦影片
 - 📱 **響應式設計** - 完美支援桌面和行動裝置
 - 🌓 **深色/淺色主題** - 支援主題切換
 
@@ -20,10 +25,15 @@
 - **框架**: Next.js 14 (App Router)
 - **語言**: TypeScript
 - **樣式**: Tailwind CSS
+- **UI 元件**: Radix UI + shadcn/ui 風格
+- **狀態管理**: TanStack Query (React Query)
 - **動畫**: Framer Motion
+- **拖放排序**: @dnd-kit
+- **圖示**: lucide-react
 - **認證**: Supabase Auth
 - **資料庫**: Supabase (PostgreSQL)
 - **API**: Ragtag Archive API
+- **影片**: HLS 串流播放器
 
 ## 快速開始
 
@@ -82,26 +92,42 @@
 ```
 src/
 ├── app/                    # Next.js App Router 頁面
-│   ├── page.tsx           # 首頁
-│   ├── search/            # 搜尋頁
+│   ├── page.tsx           # 首頁（最新/熱門影片）
+│   ├── search/            # 搜尋頁（進階篩選）
 │   ├── watch/[id]/        # 影片播放頁
-│   ├── channel/[id]/      # 頻道頁面
+│   ├── channel/[id]/      # 頻道影片頁
+│   ├── channels/          # 頻道瀏覽頁
 │   ├── favorites/         # 收藏頁
-│   ├── playlists/         # 播放清單頁
+│   ├── playlists/         # 播放清單管理
+│   │   └── [id]/          # 單一播放清單檢視
 │   ├── history/           # 觀看紀錄頁
 │   └── settings/          # 設定頁
 ├── components/
+│   ├── auth/              # 登入彈窗、用戶選單
+│   ├── features/          # 加入播放清單等功能
 │   ├── layout/            # Header 等 Layout 組件
-│   ├── ui/                # 通用 UI 組件
-│   ├── video/             # 影片相關組件
-│   ├── auth/              # 認證相關組件
-│   └── features/          # 功能組件
-├── lib/
-│   ├── api.ts             # Ragtag API 封裝
-│   ├── supabase.ts        # Supabase 客戶端
-│   └── types.ts           # TypeScript 類型定義
+│   ├── playlist/          # 播放清單組件（拖放排序、批次下載）
+│   ├── providers/         # React providers (TanStack Query)
+│   ├── search/            # 搜尋篩選、自動完成
+│   ├── settings/          # 頭像上傳等設定組件
+│   ├── ui/                # 通用 UI 組件 (shadcn/ui 風格)
+│   └── video/             # 影片播放器、推薦、聊天重播、睡眠計時
+├── contexts/
+│   ├── AuthContext.tsx     # 認證狀態管理
+│   └── ThemeContext.tsx    # 深色/淺色主題
 ├── hooks/                 # Custom React Hooks
-└── contexts/              # React Context Providers
+│   ├── useAudioOnly.ts    # 純音模式
+│   ├── useFavorites.ts    # 收藏管理
+│   ├── useSleepTimer.ts   # 睡眠計時器
+│   ├── useVolume.ts       # 音量記憶
+│   └── ...                # 搜尋、觀看進度、推薦等
+└── lib/
+    ├── api.ts             # Ragtag API 封裝
+    ├── cache.ts           # API 快取層
+    ├── download.ts        # 下載工具
+    ├── supabase.ts        # Supabase 操作
+    ├── types.ts           # TypeScript 類型定義
+    └── utils.ts           # 工具函式
 ```
 
 ## API 文件
@@ -109,6 +135,20 @@ src/
 詳細的 API 使用說明請參考：
 - `docs/RAGTAG-API.md` - Ragtag Archive API 參考
 - `docs/SUPABASE-SETUP.md` - Supabase 設定指南
+
+## 主要功能說明
+
+### 睡眠計時器
+在影片播放頁面可設定睡眠計時器，支援 15/30/45/60/90/120 分鐘預設值或自訂時間（1-480 分鐘）。計時結束後自動暫停播放。
+
+### 純音模式
+切換為純音訊播放，適合背景聆聽，設定透過 localStorage 持久保存。
+
+### 播放清單批次下載
+支援產生 bash/PowerShell/cmd 批次下載腳本，以及 URL 清單供下載管理器使用。
+
+### 智能推薦
+根據當前影片、觀看紀錄、收藏頻道等資訊推薦相關影片。已登入用戶享有個人化推薦。
 
 ## 鍵盤快捷鍵
 

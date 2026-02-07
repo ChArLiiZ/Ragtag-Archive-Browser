@@ -72,6 +72,7 @@ src/
 │       ├── DownloadSection.tsx      # Video download options
 │       ├── RecommendedVideoCard.tsx # Compact recommendation card
 │       ├── RecommendedVideos.tsx    # Smart recommendation engine
+│       ├── SleepTimerControl.tsx    # Sleep timer UI control
 │       ├── VideoCard.tsx            # Video card with progress
 │       ├── VideoGrid.tsx            # Grid layout
 │       └── VideoPlayer.tsx          # HLS video player with audio-only mode
@@ -85,6 +86,7 @@ src/
 │   ├── useSearchHistory.ts          # Local search history
 │   ├── useUserLibrary.ts            # Library status (cached)
 │   ├── useAudioOnly.ts              # Audio-only playback mode
+│   ├── useSleepTimer.ts             # Sleep timer for playback
 │   ├── useVolume.ts                 # Volume/mute persistence
 │   ├── useWatchProgress.ts          # Single video progress
 │   └── useWatchProgressBatch.ts     # Batch progress loading
@@ -273,6 +275,13 @@ const { isAudioOnly, toggleAudioOnly, setAudioOnly } = useAudioOnly()
 const { volume, isMuted, setVolume, setIsMuted, toggleMute } = useVolume()
 ```
 
+### useSleepTimer
+```typescript
+// Timer that pauses video playback after a set duration
+// Presets: 15, 30, 45, 60, 90, 120 minutes; custom 1-480 minutes
+const { isActive, remainingSeconds, remainingFormatted, start, cancel } = useSleepTimer(onExpire)
+```
+
 ## Type Definitions
 
 ### Core Types
@@ -339,6 +348,11 @@ interface ChannelInfo {
   video_count: number;
   total_views?: number;
   latest_video_date?: string;
+}
+
+// VideoPlayer exposes this handle via forwardRef for external control (e.g. sleep timer)
+interface VideoPlayerHandle {
+  pause: () => void;
 }
 ```
 
@@ -414,6 +428,7 @@ import { searchVideos } from "@/lib/api";
 ### Watch Page Features
 - HLS video player with progress tracking and audio-only mode
 - Resume from last position
+- Sleep timer (pause playback after set duration)
 - Playlist navigation (next/previous/shuffle)
 - Auto-play next in playlist
 - Favorite toggle and "Add to Playlist" modal
