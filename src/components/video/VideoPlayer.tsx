@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useImperativeHandle } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDuration } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,11 @@ interface VideoPlayerProps {
   onMutedChange?: (muted: boolean) => void;
 }
 
-export function VideoPlayer({
+export interface VideoPlayerHandle {
+  pause: () => void;
+}
+
+export const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer({
   src,
   poster,
   initialTime = 0,
@@ -33,7 +37,7 @@ export function VideoPlayer({
   isMuted: externalIsMuted,
   onVolumeChange,
   onMutedChange,
-}: VideoPlayerProps) {
+}, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +71,14 @@ export function VideoPlayer({
   const getActiveMedia = useCallback((): HTMLMediaElement | null => {
     return audioOnlyRef.current ? audioRef.current : videoRef.current;
   }, []);
+
+  // 暴露 pause 方法給外部（睡眠計時器使用）
+  useImperativeHandle(ref, () => ({
+    pause: () => {
+      const media = getActiveMedia();
+      if (media) media.pause();
+    },
+  }), [getActiveMedia]);
 
   // 同步 ref 與狀態
   useEffect(() => {
@@ -785,4 +797,4 @@ export function VideoPlayer({
       </AnimatePresence>
     </div>
   );
-}
+});

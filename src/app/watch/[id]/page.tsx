@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -30,6 +30,9 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { VideoMetadata, PlaylistItem, Playlist } from "@/lib/types";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
+import type { VideoPlayerHandle } from "@/components/video/VideoPlayer";
+import { useSleepTimer } from "@/hooks/useSleepTimer";
+import { SleepTimerControl } from "@/components/video/SleepTimerControl";
 import { useAudioOnly } from "@/hooks/useAudioOnly";
 import { useVolume } from "@/hooks/useVolume";
 import { RecommendedVideos } from "@/components/video/RecommendedVideos";
@@ -67,6 +70,20 @@ export default function WatchPage() {
   const { user } = useAuth();
   const { audioOnly, toggleAudioOnly } = useAudioOnly();
   const { volume, isMuted, setVolume, setIsMuted } = useVolume();
+
+  // 睡眠計時器
+  const playerRef = useRef<VideoPlayerHandle>(null);
+  const sleepTimerExpiredRef = useRef(false);
+  const handleSleepTimerExpire = useCallback(() => {
+    playerRef.current?.pause();
+    sleepTimerExpiredRef.current = true;
+  }, []);
+  const sleepTimer = useSleepTimer(handleSleepTimerExpire);
+
+  // 切換影片時重置睡眠計時器到期旗標，避免殘留狀態阻止下一部自動播放
+  useEffect(() => {
+    sleepTimerExpiredRef.current = false;
+  }, [videoId]);
 
   const [video, setVideo] = useState<VideoMetadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -307,6 +324,16 @@ export default function WatchPage() {
     }
   }, [playlistItems, currentIndex, shuffleMode, playedIndices, playlistId, router, restartMode]);
 
+  // 影片結束時的處理（考慮睡眠計時器）
+  const handleVideoEnded = useCallback(() => {
+    if (sleepTimerExpiredRef.current) {
+      // 睡眠計時器已觸發，不跳到下一部
+      sleepTimerExpiredRef.current = false;
+      return;
+    }
+    playNextVideo();
+  }, [playNextVideo]);
+
   // 播放上一部
   const playPrevVideo = useCallback(() => {
     if (playlistItems.length === 0 || currentIndex <= 0) return;
@@ -424,11 +451,12 @@ export default function WatchPage() {
           >
             {videoUrl ? (
               <VideoPlayer
+                ref={playerRef}
                 src={videoUrl}
                 poster={posterUrl}
                 initialTime={initialProgress}
                 onProgressUpdate={handleProgressUpdate}
-                onEnded={playlistId ? playNextVideo : undefined}
+                onEnded={playlistId ? handleVideoEnded : undefined}
                 autoPlay={progressLoaded}
                 audioOnly={audioOnly}
                 onToggleAudioOnly={toggleAudioOnly}
@@ -633,6 +661,14 @@ export default function WatchPage() {
                     加入清單
                   </Button>
                 )}
+
+                {/* 睡眠計時器 */}
+                <SleepTimerControl
+                  isActive={sleepTimer.isActive}
+                  remainingFormatted={sleepTimer.remainingFormatted}
+                  onStart={sleepTimer.start}
+                  onCancel={sleepTimer.cancel}
+                />
               </div>
             </div>
 
