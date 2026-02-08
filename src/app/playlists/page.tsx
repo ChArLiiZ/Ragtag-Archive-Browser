@@ -24,6 +24,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ListVideo, Plus, Trash2, Play, Lock, Globe } from "lucide-react";
+import { EmptyState } from "@/components/common";
 
 // 擴展 Playlist 類型，包含詳細資訊
 interface PlaylistWithDetails extends Playlist {
@@ -98,14 +99,12 @@ export default function PlaylistsPage() {
   if (!authLoading && !user) {
     return (
       <div className="container-custom py-8">
-        <Card className="p-8 text-center">
-          <ListVideo className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-xl font-bold mb-2">請先登入</h2>
-          <p className="text-muted-foreground mb-4">登入後即可管理播放清單</p>
-          <Button asChild>
-            <Link href="/">返回首頁</Link>
-          </Button>
-        </Card>
+        <EmptyState
+          icon={ListVideo}
+          title="請先登入"
+          description="登入後即可管理播放清單"
+          action={{ label: "返回首頁", href: "/" }}
+        />
       </div>
     );
   }
@@ -141,14 +140,12 @@ export default function PlaylistsPage() {
             <p className="text-destructive">{error}</p>
           </Card>
         ) : playlists.length === 0 ? (
-          <Card className="p-8 text-center">
-            <ListVideo className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-bold mb-2">沒有播放清單</h2>
-            <p className="text-muted-foreground mb-4">建立您的第一個播放清單</p>
-            <Button onClick={() => setShowCreateModal(true)}>
-              新增播放清單
-            </Button>
-          </Card>
+          <EmptyState
+            icon={ListVideo}
+            title="沒有播放清單"
+            description="建立您的第一個播放清單"
+            action={{ label: "新增播放清單", onClick: () => setShowCreateModal(true) }}
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {playlists.map((playlist, index) => (

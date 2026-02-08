@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Heart, X, Search, ArrowUpDown, Grid, List } from "lucide-react";
+import { EmptyState } from "@/components/common";
 
 type SortOption = "created_at" | "title" | "channel";
 type SortOrder = "asc" | "desc";
@@ -211,23 +212,19 @@ export default function FavoritesPage() {
             <p className="text-destructive">{error}</p>
           </Card>
         ) : favorites.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Heart className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-bold mb-2">沒有收藏的影片</h2>
-            <p className="text-muted-foreground mb-4">開始瀏覽並收藏您喜歡的影片吧</p>
-            <Button asChild>
-              <Link href="/">探索影片</Link>
-            </Button>
-          </Card>
+          <EmptyState
+            icon={Heart}
+            title="沒有收藏的影片"
+            description="開始瀏覽並收藏您喜歡的影片吧"
+            action={{ label: "探索影片", href: "/" }}
+          />
         ) : filteredAndSortedFavorites.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Search className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-bold mb-2">找不到符合的影片</h2>
-            <p className="text-muted-foreground mb-4">試試其他關鍵字吧</p>
-            <Button variant="outline" onClick={() => setSearchQuery("")}>
-              清除搜尋
-            </Button>
-          </Card>
+          <EmptyState
+            icon={Search}
+            title="找不到符合的影片"
+            description="試試其他關鍵字吧"
+            action={{ label: "清除搜尋", onClick: () => setSearchQuery("") }}
+          />
         ) : viewMode === "grid" ? (
           // 網格視圖
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

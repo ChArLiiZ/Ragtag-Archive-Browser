@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+"use client";
+
+import { useCallback } from "react";
+import { useLocalStorage } from "./useLocalStorage";
 
 const STORAGE_KEY = "archive-browser-search-history";
 const MAX_HISTORY_ITEMS = 15;
@@ -17,31 +20,7 @@ export interface UseSearchHistoryReturn {
 export function useSearchHistory(
   maxItems: number = MAX_HISTORY_ITEMS
 ): UseSearchHistoryReturn {
-  const [history, setHistory] = useState<string[]>([]);
-
-  // 從 localStorage 載入歷史記錄
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setHistory(parsed.slice(0, maxItems));
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load search history:", err);
-    }
-  }, [maxItems]);
-
-  // 儲存到 localStorage
-  const saveHistory = useCallback((newHistory: string[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newHistory));
-    } catch (err) {
-      console.error("Failed to save search history:", err);
-    }
-  }, []);
+  const [history, setHistory] = useLocalStorage<string[]>(STORAGE_KEY, []);
 
   // 新增搜尋記錄
   const addToHistory = useCallback(
@@ -55,37 +34,26 @@ export function useSearchHistory(
           (item) => item.toLowerCase() !== trimmed.toLowerCase()
         );
         // 新的放在最前面
-        const newHistory = [trimmed, ...filtered].slice(0, maxItems);
-        saveHistory(newHistory);
-        return newHistory;
+        return [trimmed, ...filtered].slice(0, maxItems);
       });
     },
-    [maxItems, saveHistory]
+    [maxItems, setHistory]
   );
 
   // 移除單一記錄
   const removeFromHistory = useCallback(
     (query: string) => {
-      setHistory((prev) => {
-        const newHistory = prev.filter(
-          (item) => item.toLowerCase() !== query.toLowerCase()
-        );
-        saveHistory(newHistory);
-        return newHistory;
-      });
+      setHistory((prev) =>
+        prev.filter((item) => item.toLowerCase() !== query.toLowerCase())
+      );
     },
-    [saveHistory]
+    [setHistory]
   );
 
   // 清除所有記錄
   const clearHistory = useCallback(() => {
     setHistory([]);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (err) {
-      console.error("Failed to clear search history:", err);
-    }
-  }, []);
+  }, [setHistory]);
 
   return {
     history,

@@ -5,7 +5,8 @@
       "Bash(npx tsc:*)",
       "Bash(npm run build:*)",
       "Bash(tree:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(wc:*)"
     ]
   }
 }

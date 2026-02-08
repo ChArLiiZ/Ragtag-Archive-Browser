@@ -1,17 +1,13 @@
 "use client";
 
+import { memo } from "react";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useCallback } from "react";
 import type { VideoMetadata } from "@/lib/types";
 import { Heart, ListVideo } from "lucide-react";
-import {
-  getThumbnailUrl,
-  getFallbackThumbnailUrls,
-  formatDuration,
-  formatViewCount,
-  formatUploadDate,
-} from "@/lib/api";
+import { formatDuration, formatViewCount, formatUploadDate } from "@/lib/api";
+import { useThumbnailFallback } from "@/hooks/useThumbnailFallback";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -22,10 +18,7 @@ interface VideoCardProps {
   userLibrary?: { favorites: Set<string>; playlistItems: Set<string> };
 }
 
-// 預設的佔位圖片（灰色背景）
-const PLACEHOLDER_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180' viewBox='0 0 320 180'%3E%3Crect fill='%231a1a2e' width='320' height='180'/%3E%3Ctext fill='%234a4a5a' font-family='Arial' font-size='14' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3ENo Thumbnail%3C/text%3E%3C/svg%3E";
-
-export function VideoCard({ video, index = 0, watchProgress, userLibrary }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ video, index = 0, watchProgress, userLibrary }: VideoCardProps) {
   const router = useRouter();
 
   // 使用從 props 傳入的 userLibrary，避免每個卡片都呼叫 hook
@@ -37,32 +30,8 @@ export function VideoCard({ video, index = 0, watchProgress, userLibrary }: Vide
     ? (watchProgress.progress / watchProgress.duration) * 100
     : 0;
 
-  // 取得所有可能的縮圖 URL
-  const allThumbnailUrls = useMemo(() => {
-    const primaryUrl = getThumbnailUrl(video.video_id, video.drive_base, video.files);
-    const fallbackUrls = getFallbackThumbnailUrls(video.video_id, video.drive_base, video.files);
-    // 確保主要 URL 在最前面，並過濾重複
-    const urls = [primaryUrl, ...fallbackUrls.filter(url => url !== primaryUrl)];
-    return urls;
-  }, [video.video_id, video.drive_base, video.files]);
-
-  // 追蹤目前使用的縮圖 URL 索引
-  const [urlIndex, setUrlIndex] = useState(0);
-  const [hasError, setHasError] = useState(false);
-
-  // 目前顯示的縮圖 URL
-  const currentThumbnailUrl = hasError ? PLACEHOLDER_IMAGE : allThumbnailUrls[urlIndex];
-
-  // 處理圖片載入錯誤
-  const handleImageError = useCallback(() => {
-    if (urlIndex < allThumbnailUrls.length - 1) {
-      // 還有備用 URL，嘗試下一個
-      setUrlIndex(prev => prev + 1);
-    } else {
-      // 所有 URL 都失敗了，顯示佔位圖片
-      setHasError(true);
-    }
-  }, [urlIndex, allThumbnailUrls.length]);
+  // 使用縮圖 fallback hook
+  const { currentThumbnailUrl, handleImageError } = useThumbnailFallback(video);
 
   const handleChannelClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -140,7 +109,9 @@ export function VideoCard({ video, index = 0, watchProgress, userLibrary }: Vide
       </Link>
     </div>
   );
-}
+});
+
+VideoCard.displayName = "VideoCard";
 
 // 骨架載入元件
 export function VideoCardSkeleton() {

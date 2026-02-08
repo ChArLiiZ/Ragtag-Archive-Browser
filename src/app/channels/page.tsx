@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { searchVideos, getChannelAvatarUrl } from "@/lib/api";
+import { searchVideos, getChannelAvatarUrl, formatViewCount } from "@/lib/api";
 import type { ChannelInfo, VideoMetadata } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -359,19 +359,6 @@ function ChannelsContent() {
       )}
     </div>
   );
-}
-
-/**
- * 格式化觀看次數
- */
-function formatViewCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return String(count);
 }
 
 export default function ChannelsPage() {

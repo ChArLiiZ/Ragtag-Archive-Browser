@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { PlaylistItem, VideoFile } from "@/lib/types";
-import { getVideoById, formatFileSize } from "@/lib/api";
+import { getVideoById, formatFileSize, normalizeDriveBase } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,19 +31,6 @@ interface DownloadItem {
   filename: string;
   url: string;
   size: number;
-}
-
-/**
- * 正規化 drive_base
- */
-function normalizeDriveBase(driveBase: string): string {
-  if (driveBase.startsWith("gd:")) {
-    return driveBase;
-  }
-  if (!driveBase.includes(":")) {
-    return `gd:${driveBase}`;
-  }
-  return driveBase;
 }
 
 export function PlaylistDownload({ playlistName, items }: PlaylistDownloadProps) {

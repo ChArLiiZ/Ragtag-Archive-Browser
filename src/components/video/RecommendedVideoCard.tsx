@@ -1,30 +1,23 @@
 "use client";
 
+import { memo } from "react";
+
 import Link from "next/link";
-import { useMemo, useState, useCallback } from "react";
 import type { VideoMetadata } from "@/lib/types";
 import { useUserLibrary } from "@/hooks/useUserLibrary";
+import { useThumbnailFallback } from "@/hooks/useThumbnailFallback";
 import { Heart, ListVideo } from "lucide-react";
-import {
-    getThumbnailUrl,
-    getFallbackThumbnailUrls,
-    formatDuration,
-    formatViewCount,
-} from "@/lib/api";
+import { formatDuration, formatViewCount } from "@/lib/api";
 
 interface RecommendedVideoCardProps {
     video: VideoMetadata;
     watchProgress?: { progress: number; duration: number };
 }
 
-// 預設的佔位圖片
-const PLACEHOLDER_IMAGE =
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='90' viewBox='0 0 160 90'%3E%3Crect fill='%231a1a2e' width='160' height='90'/%3E%3C/svg%3E";
-
 /**
  * 緊湊型影片卡片，用於推薦區塊
  */
-export function RecommendedVideoCard({
+export const RecommendedVideoCard = memo(function RecommendedVideoCard({
     video,
     watchProgress,
 }: RecommendedVideoCardProps) {
@@ -38,35 +31,8 @@ export function RecommendedVideoCard({
             ? (watchProgress.progress / watchProgress.duration) * 100
             : 0;
 
-    // 取得縮圖 URL
-    const allThumbnailUrls = useMemo(() => {
-        const primaryUrl = getThumbnailUrl(
-            video.video_id,
-            video.drive_base,
-            video.files
-        );
-        const fallbackUrls = getFallbackThumbnailUrls(
-            video.video_id,
-            video.drive_base,
-            video.files
-        );
-        return [primaryUrl, ...fallbackUrls.filter((url) => url !== primaryUrl)];
-    }, [video.video_id, video.drive_base, video.files]);
-
-    const [urlIndex, setUrlIndex] = useState(0);
-    const [hasError, setHasError] = useState(false);
-
-    const currentThumbnailUrl = hasError
-        ? PLACEHOLDER_IMAGE
-        : allThumbnailUrls[urlIndex];
-
-    const handleImageError = useCallback(() => {
-        if (urlIndex < allThumbnailUrls.length - 1) {
-            setUrlIndex((prev) => prev + 1);
-        } else {
-            setHasError(true);
-        }
-    }, [urlIndex, allThumbnailUrls.length]);
+    // 使用縮圖 fallback hook
+    const { currentThumbnailUrl, handleImageError } = useThumbnailFallback(video);
 
     return (
         <Link
@@ -129,7 +95,9 @@ export function RecommendedVideoCard({
             </div>
         </Link>
     );
-}
+});
+
+RecommendedVideoCard.displayName = "RecommendedVideoCard";
 
 /**
  * 推薦影片骨架載入

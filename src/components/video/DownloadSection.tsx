@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { VideoMetadata, VideoFile, ChatMessage } from "@/lib/types";
-import { formatFileSize } from "@/lib/api";
+import { formatFileSize, normalizeDriveBase } from "@/lib/api";
 import {
   downloadChatAsText,
   downloadChatAsJson,
@@ -45,19 +45,6 @@ interface DownloadSectionProps {
   video: VideoMetadata;
   chatMessages?: ChatMessage[];
   isLoadingChat?: boolean;
-}
-
-/**
- * 正規化 drive_base
- */
-function normalizeDriveBase(driveBase: string): string {
-  if (driveBase.startsWith("gd:")) {
-    return driveBase;
-  }
-  if (!driveBase.includes(":")) {
-    return `gd:${driveBase}`;
-  }
-  return driveBase;
 }
 
 /**
@@ -248,8 +235,8 @@ export function DownloadSection({
                           {isLoadingChat
                             ? "載入中..."
                             : hasChatMessages
-                            ? `聊天記錄 (${chatMessages.length})`
-                            : "無聊天記錄"}
+                              ? `聊天記錄 (${chatMessages.length})`
+                              : "無聊天記錄"}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">

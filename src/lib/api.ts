@@ -173,7 +173,7 @@ export async function getPopularVideos(
  * 正規化 drive_base 格式
  * 確保 drive_base 有正確的前綴格式
  */
-function normalizeDriveBase(driveBase: string): string {
+export function normalizeDriveBase(driveBase: string): string {
   // 如果已經有 gd: 前綴，直接返回
   if (driveBase.startsWith('gd:')) {
     return driveBase;

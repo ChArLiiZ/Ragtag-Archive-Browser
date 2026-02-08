@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Clock, Trash2 } from "lucide-react";
+import { EmptyState } from "@/components/common";
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useAuth();
@@ -60,14 +61,12 @@ export default function HistoryPage() {
   if (!authLoading && !user) {
     return (
       <div className="container-custom py-8">
-        <Card className="p-8 text-center">
-          <Clock className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-xl font-bold mb-2">請先登入</h2>
-          <p className="text-muted-foreground mb-4">登入後即可查看觀看紀錄</p>
-          <Button asChild>
-            <Link href="/">返回首頁</Link>
-          </Button>
-        </Card>
+        <EmptyState
+          icon={Clock}
+          title="請先登入"
+          description="登入後即可查看觀看紀錄"
+          action={{ label: "返回首頁", href: "/" }}
+        />
       </div>
     );
   }
@@ -110,14 +109,12 @@ export default function HistoryPage() {
             <p className="text-destructive">{error}</p>
           </Card>
         ) : history.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Clock className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-bold mb-2">沒有觀看紀錄</h2>
-            <p className="text-muted-foreground mb-4">開始觀看影片後會顯示在這裡</p>
-            <Button asChild>
-              <Link href="/">探索影片</Link>
-            </Button>
-          </Card>
+          <EmptyState
+            icon={Clock}
+            title="沒有觀看紀錄"
+            description="開始觀看影片後會顯示在這裡"
+            action={{ label: "探索影片", href: "/" }}
+          />
         ) : (
           <div className="space-y-4">
             {history.map((item, index) => {

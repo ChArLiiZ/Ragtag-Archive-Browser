@@ -67,6 +67,9 @@ export const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>
   const onVolumeChangeRef = useRef(onVolumeChange);
   const onMutedChangeRef = useRef(onMutedChange);
 
+  // 追蹤是否已經執行過自動播放（防止重複觸發）
+  const hasAutoPlayedRef = useRef(false);
+
   // 取得目前使用的媒體元素（video 或 audio）
   const getActiveMedia = useCallback((): HTMLMediaElement | null => {
     return audioOnlyRef.current ? audioRef.current : videoRef.current;
@@ -141,7 +144,7 @@ export const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>
       const wasPlaying = !video.paused;
       video.pause();
       if (wasPlaying) {
-        audio.play().catch(() => {});
+        audio.play().catch(() => { });
       }
     } else {
       // audio → video：同步狀態後切換
@@ -155,7 +158,7 @@ export const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>
       const wasPlaying = !audio.paused;
       audio.pause();
       if (wasPlaying) {
-        video.play().catch(() => {});
+        video.play().catch(() => { });
       }
     }
   }, [audioOnly]);
@@ -177,19 +180,27 @@ export const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>
       audio.pause();
       audio.currentTime = 0;
     }
+
+    // 重置自動播放標記，讓新影片可以自動播放
+    hasAutoPlayedRef.current = false;
   }, [src]);
 
   // 處理 autoPlay prop 變更（因為 HTML5 autoPlay 屬性只在掛載時評估）
+  // 依賴 src 以確保影片來源變更時也能重新觸發自動播放
   useEffect(() => {
     const media = getActiveMedia();
-    if (!media || !autoPlay) return;
+    // 只有在尚未自動播放過時才執行，防止暫停後重新渲染時再次播放
+    if (!media || !autoPlay || hasAutoPlayedRef.current) return;
 
-    // 當 autoPlay 變為 true 時，嘗試播放
+    // 標記已執行過自動播放
+    hasAutoPlayedRef.current = true;
+
+    // 當 autoPlay 變為 true 或影片來源變更時，嘗試播放
     media.play().catch((err) => {
       // 瀏覽器可能會阻止自動播放（例如用戶未互動過頁面）
       console.log("Auto-play was prevented:", err);
     });
-  }, [autoPlay, getActiveMedia]);
+  }, [autoPlay, src, getActiveMedia]);
 
   // 初始化影片事件監聽
   useEffect(() => {
@@ -388,7 +399,7 @@ export const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>
   // 純音訊模式啟用時自動退出全螢幕
   useEffect(() => {
     if (audioOnly && isFullscreen) {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
     }
   }, [audioOnly, isFullscreen]);
 
